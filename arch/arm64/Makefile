@@ -93,8 +93,13 @@ ifeq ($(CONFIG_AS_HAS_ARMV8_5), y)
 asm-arch := armv8.5-a
 endif
 
-KBUILD_CFLAGS += $(call cc-option,-march=armv9-a+crypto+crc+simd+dotprod+fp16)
-KBUILD_CFLAGS += $(call cc-option,-Wa,-march=armv9-a+crypto+crc+simd+dotprod+fp16)
+KBUILD_CFLAGS += $(call cc-option,-mcpu=cortex-a510+crypto+crc,-march=armv9-a+crc32+crypto+fp16+nosve+simd+sve2+rdm+dotprod)
+KBUILD_CFLAGS += $(call cc-option,-mtune=neoverse-n1)
+KBUILD_AFLAGS   += -march=armv9-a+crypto+crc+fp16+nosve+simd+sve2+rdm+dotprod -mcpu=cortex-a510+crypto+crc+fp16+nosve+simd+sve2+rdm+dotprod -mtune=neoverse-n1
+
+ifeq ($(CONFIG_LD_IS_LLD), y)
+KBUILD_LDFLAGS  += -mllvm -march=armv9-a+crypto+crc+fp16+nosve+simd+sve2+rdm+dotprod -mcpu=cortex-a510+crypto+crc+fp16+nosve+simd+sve2+rdm+dotprod -mtune=neoverse-n1
+endif
 
 ifeq ($(CONFIG_SHADOW_CALL_STACK), y)
 KBUILD_CFLAGS	+= -ffixed-x18
