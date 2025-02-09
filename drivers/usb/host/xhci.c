@@ -635,6 +635,7 @@ static int xhci_run_finished(struct xhci_hcd *xhci)
 		spin_unlock_irqrestore(&xhci->lock, flags);
 		return -ENODEV;
 	}
+
 	xhci->shared_hcd->state = HC_STATE_RUNNING;
 	xhci->cmd_ring_state = CMD_RING_STATE_RUNNING;
 
@@ -1206,7 +1207,7 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 		xhci_dbg(xhci, "Stop HCD\n");
 		xhci_halt(xhci);
 		xhci_zero_64b_regs(xhci);
-		retval = xhci_reset(xhci, XHCI_RESET_LONG_USEC);
+		retval = xhci_reset(xhci, XHCI_RESET_SHORT_USEC);
 		spin_unlock_irq(&xhci->lock);
 		if (retval)
 			return retval;
