@@ -165,3 +165,4 @@ sphinx_*/
 
 # Object directory
 out/
+*.log
