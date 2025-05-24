@@ -55,12 +55,12 @@ SUSFS_CHECKOUT_HASH=""         # If non‐empty, SUSFS_Patch will checkout this 
 # ---------------------- | Enable either KernelSU or KernelSU-Next or SUKISU, DO NOT ENABLE BOTH OR ALL! | ----------------------------#
 
 # ====================================== # | KernelSU-Next Options
-ENABLE_KSU_NEXT=1              # 1=Use KernelSU-Next                    | 0=Skip
+ENABLE_KSU_NEXT=0              # 1=Use KernelSU-Next                    | 0=Skip
 KSU_NEXT_STABLE=1         # 1=Use KernelSU-Next stable branches    | 0=Use KernelSU-Next Development branches. | (Only works if ENABLE_KSU_NEXT=1)
 # Setting Checkout hash ignores / disables KSU_NEXT_STABLE
 # If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
 KSUN_CHECKOUT_HASH=""
-KSUN_CHECKOUT_HASH="505502a173705243b2042bc055c43fe9d319a49e"
+#KSUN_CHECKOUT_HASH="505502a173705243b2042bc055c43fe9d319a49e"
 # -----------------------------------------------------------------------------------------
 
 # ====================================== # | SUKISU-Ultra Options
@@ -71,7 +71,7 @@ SUKISU_STABLE=0                # 1=Use SUKISU SUSFS Stable branches    | 0=Use S
 SUKI_CHECKOUT_HASH=""
 
 # ====================================== # | KernelSU Options
-ENABLE_KSU=0                   # 1=Use KernelSU                         | 0=Skip. | (Auto applies KernelSU SUSFS patches if PATCH_SUSFS=1)
+ENABLE_KSU=1                   # 1=Use KernelSU                         | 0=Skip. | (Auto applies KernelSU SUSFS patches if PATCH_SUSFS=1)
 # If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
 KSU_CHECKOUT_HASH=""
 
@@ -176,19 +176,31 @@ clone() {
 
 clean_kernel() {
     log_section "Clean_Kernel function start"
-    cd $KERNELDIR
-    # Always do clean build lol
+    cd "$KERNELDIR"
+
+    # Always do clean build
     echo -e "$yellow**** Cleaning / Removing 'out' folder ****$nocol"
     rm -rf out
     mkdir -p out
 
     echo -e "$yellow**** Cleaning 'AnyKernel3' folder / any previous builds ****$nocol"
     rm -f "$ANYKERNEL3_DIR"/*.zip
-    rm -rf $ANYKERNEL3_DIR/$ARTIFACT
-    rm -rf $ANYKERNEL3_DIR/dtbo.img
+    rm -rf "$ANYKERNEL3_DIR/$ARTIFACT"
+    rm -rf "$ANYKERNEL3_DIR/dtbo.img"
 
-    rm -rf susfs4ksu 50_add_susfs_in_gki-android13-5.15.patch
-    rm -rf KernelSU-Next KernelSU
+    # Only remove SUSFS sources if we’re patching SUSFS
+    if [ "${PATCH_SUSFS:-0}" -eq 1 ]; then
+        echo -e "$yellow**** Removing SUSFS folder/patch ****$nocol"
+        rm -rf susfs4ksu 50_add_susfs_in_gki-5.15*.patch
+    fi
+
+    # Only remove KSU trees if any KSU variant is enabled
+    if [ "${ENABLE_KSU_NEXT:-0}" -eq 1 ] || \
+       [ "${ENABLE_SUKISU:-0}"    -eq 1 ] || \
+       [ "${ENABLE_KSU:-0}"       -eq 1 ]; then
+        echo -e "$yellow**** Removing KSU source folders ****$nocol"
+        rm -rf KernelSU-Next KernelSU
+    fi
 }
 
 
