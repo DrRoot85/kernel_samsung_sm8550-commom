@@ -9,7 +9,7 @@ nocol='\033[0m'
 green='\033[1;32m'
 red='\033[1;31m'
 KERNELDIR=$PWD
-trap 'echo -e "${red}❌ Error on line $LINENO. Aborting.${nocol}"; exit 1' ERR
+trap 'error_handler $LINENO' ERR
 
 echo -e " $yellow #####|                 Kernel Build Script                  |########$nocol "
 echo -e " $yellow #####|     Choose Correct options as required when asked    |##########$nocol "
@@ -32,7 +32,7 @@ echo -e " $yellow #####|       top of the script to enable KernelSU patches   |#
 KERNEL_DEFCONFIG=gki_defconfig  # Looks for defconfig in arch/<exported_arch>/configs/
 ANYKERNEL3_DIR=$PWD/AnyKernel3/ # Required by the function zip_kernel
 CLANG_VERSION=clang-r547379
-CLANG_DIR="/home/akm/Git/Clang/$CLANG_VERSION"
+CLANG_DIR="$HOME/Git/Clang/$CLANG_VERSION"
 CLANG_BINARY="$CLANG_DIR/bin/clang"
 CC_CLANG=clang
 export ARCH=arm64
@@ -40,15 +40,50 @@ export SUBARCH=ARM64
 export PATH="$CLANG_DIR/bin:$PATH"
 export KBUILD_COMPILER_STRING="$($CLANG_BINARY --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
 
-# -----------------------------| Function options |---------------------------------------------------------------- #
+# An array that stores all make command, edit it as required. These options will be used throughout the script
+MAKE_FLAGS=( \
+  O=out \
+  CC="$CC_CLANG" \
+  LD=ld.lld \
+  LLVM=1 \
+  LLVM_IAS=1 \
+)
+
+# ---------------------------------------| Function options |------------------------------------------------------------------------ #
+
 ARTIFACT="Image.gz"            # Variable to hold the name of the final kernel artifact. Change as required.
 BUILD_MODULES="n"              # "y" = Enabled | "n" = Disabled
+ENABLE_BREAKPOINTS=0           # Enabled all breakpoints in the script to interrupt after specific steps to maybe apply a manual patch.
+# -----------------------------------------------------------------------------------------
 PATCH_SUSFS=1                  # 1=Apply SUSFS patch from simonpunk repo     | 0=skip
 SUSFS_CHECKOUT_HASH=""         # If non‐empty, SUSFS_Patch will checkout this commit after cloning.
-#SUSFS_CHECKOUT_HASH="eeb4737559da1321d0f121f1b3aa75ae9567075a"         # Checkout to SUSFS v1.5.5. (Example, if empty it'll fetch latest release)
-ENABLE_KSU_NEXT=0              # Enable either KernelSU or KernelSU-Next, Don't enable both.
-KERNELSU_NEXT_STABLE=1         # 1=Use KernelSU-Next stable branches    | 0=Use KernelSU-Next Development branches.
-ENABLE_KSU=1                   # 1=Use KernelSU      | 0=Skip
+#SUSFS_CHECKOUT_HASH="eeb4737559da1321d0f121f1b3aa75ae9567075a"  # As an example, uncomment this to Checkout to SUSFS v1.5.5.
+# ------------------------------------------------------------------------------------------------------------------------------------ #
+
+
+# ---------------------- | Enable either KernelSU or KernelSU-Next or SUKISU, DO NOT ENABLE BOTH OR ALL! | ----------------------------#
+
+# ====================================== # | KernelSU-Next Options
+ENABLE_KSU_NEXT=0              # 1=Use KernelSU-Next                    | 0=Skip
+KSU_NEXT_STABLE=1         # 1=Use KernelSU-Next stable branches    | 0=Use KernelSU-Next Development branches. | (Only works if ENABLE_KSU_NEXT=1)
+# Setting Checkout hash ignores / disables KSU_NEXT_STABLE
+# If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
+KSUN_CHECKOUT_HASH=""
+#KSUN_CHECKOUT_HASH="505502a173705243b2042bc055c43fe9d319a49e"
+# -----------------------------------------------------------------------------------------
+
+# ====================================== # | SUKISU-Ultra Options
+ENABLE_SUKISU=0                # 1=Use SUKISU                           | 0=Skip
+SUKISU_STABLE=0                # 1=Use SUKISU SUSFS Stable branches    | 0=Use SUKISU SUSFS Development branches. | (Only works if ENABLE_SUKISU=1)
+# Setting Checkout hash ignores / disables SUKISU_STABLE
+# If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
+SUKI_CHECKOUT_HASH=""
+
+# ====================================== # | KernelSU Options
+ENABLE_KSU=1                   # 1=Use KernelSU                         | 0=Skip. | (Auto applies KernelSU SUSFS patches if PATCH_SUSFS=1)
+# If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
+KSU_CHECKOUT_HASH=""
+
 
 # -------------------------------------- Information and miscellaneous Functions ------------------------------------------------------#
 
@@ -91,6 +126,42 @@ start() {
     echo -e "Final Kernel name is set to $FINAL_KERNEL_ZIP"
 }
 
+error_handler() {
+    local lineno="$1"
+    echo
+    echo -e "${red}❌ Error on line ${lineno}. Aborting...${nocol}"
+    echo
+
+    # Yellow explanatory text
+    echo -e "${yellow}It looks like the build script exited early."
+    echo -e "To clean your tree, run one of the following commands to undo KernelSU/Next/SUKISU changes:${nocol}"
+    echo
+
+    echo
+    echo -e "  ${blue}# If you used SUKISU:${nocol}"
+    echo -e "  ${nocol}curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s -- --cleanup${nocol}"
+    echo
+
+    echo 
+    echo -e "  ${blue}# If you used KernelSU‑Next:${nocol}"
+    echo -e "  ${nocol}curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s -- --cleanup${nocol}"
+
+    echo
+    echo -e "  ${blue}# If you used stock KernelSU:${nocol}"
+    echo -e "  ${nocol}curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s -- --cleanup${nocol}"
+    echo
+
+    echo
+    echo -e "${blue}To clean the changes caused by patches, run the following command.${nocol}"
+    echo -e "${red}WARNING: This will reset your repo to a pristine state and "
+    echo -e "destroy any uncommitted changes. Proceed with caution!${nocol}"
+    echo
+
+    echo -e "  ${yellow}git reset --hard HEAD && git clean -xfd${nocol}"
+    echo
+
+    exit 1
+}
 
 clone() {
     log_section "Clone Function Start"
@@ -114,18 +185,31 @@ clone() {
 
 clean_kernel() {
     log_section "Clean_Kernel function start"
-    cd $KERNELDIR
-    # Always do clean build lol
+    cd "$KERNELDIR"
+
+    # Always do clean build
     echo -e "$yellow**** Cleaning / Removing 'out' folder ****$nocol"
     rm -rf out
     mkdir -p out
 
     echo -e "$yellow**** Cleaning 'AnyKernel3' folder / any previous builds ****$nocol"
     rm -f "$ANYKERNEL3_DIR"/*.zip
-    rm -rf $ANYKERNEL3_DIR/$ARTIFACT
-    rm -rf $ANYKERNEL3_DIR/dtbo.img
+    rm -rf "$ANYKERNEL3_DIR/$ARTIFACT"
+    rm -rf "$ANYKERNEL3_DIR/dtbo.img"
 
-    rm -rf susfs4ksu 50_add_susfs_in_gki-android13-5.15.patch
+    # Only remove SUSFS sources if we’re patching SUSFS
+    if [ "${PATCH_SUSFS:-0}" -eq 1 ]; then
+        echo -e "$yellow**** Removing SUSFS folder/patch ****$nocol"
+        rm -rf susfs4ksu 50_add_susfs_in_gki-5.15*.patch
+    fi
+
+    # Only remove KSU trees if any KSU variant is enabled
+    if [ "${ENABLE_KSU_NEXT:-0}" -eq 1 ] || \
+       [ "${ENABLE_SUKISU:-0}"    -eq 1 ] || \
+       [ "${ENABLE_KSU:-0}"       -eq 1 ]; then
+        echo -e "$yellow**** Removing KSU source folders ****$nocol"
+        rm -rf KernelSU-Next KernelSU
+    fi
 }
 
 
@@ -209,25 +293,23 @@ build_kernel() {
     echo "       NOW MAKING _defconfig : $KERNEL_DEFCONFIG        "
     echo -e "***********************************************$nocol"
     #make O=out CC="$CC_CLANG" $KERNEL_DEFCONFIG
-    make O=out \
-        CC="$CC_CLANG" \
-        LD=ld.lld \
-        LLVM=1 \
-        LLVM_IAS=1 \
-        $KERNEL_DEFCONFIG \
-        -j$(nproc) 2>&1 | tee build.log
+    make \
+        "${MAKE_FLAGS[@]}" \
+        "$KERNEL_DEFCONFIG" \
+        "-j$(nproc)" \
+        2>&1 | tee build.log
+    echo #blank line
 
     #------------------------Kernel Stuff-------------------------------------
     echo -e "$blue***********************************************"
     echo "         NOW COMPILING KERNEL!                  "
     echo -e "***********************************************$nocol"
 
-    make O=out \
-        CC="$CC_CLANG" \
-        LD=ld.lld \
-        LLVM=1 \
-        LLVM_IAS=1 \
-        -j$(nproc) 2>&1 | tee build.log
+    make \
+        "${MAKE_FLAGS[@]}" \
+        "-j$(nproc)" \
+        2>&1 | tee -a build.log   # append to the same log
+    echo #blank line
 
     #---------------------------Build Summary------------------------------------
     BUILD_MID=$(date +"%s")
@@ -258,6 +340,7 @@ build_modules() {
         break
     done
     echo -e "Final Module name is set to $MODULES_NAME"
+    echo # Blank line
     #------------- Name verification ends --------------#
     cd "$KERNELDIR"
     # Build modules if selected by the user
@@ -295,45 +378,47 @@ build_modules() {
             echo -e "$blue***********************************************"
             echo "       NOW MAKING _defconfig : $KERNEL_DEFCONFIG        "
             echo -e "***********************************************$nocol"
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                $KERNEL_DEFCONFIG \
-                -j$(nproc) 2>&1 | tee build.log
+            make \
+                "${MAKE_FLAGS[@]}" \
+                "$KERNEL_DEFCONFIG" \
+                "-j$(nproc)" \
+                2>&1 | tee -a build.log
+            echo #blank line
             echo -e "$yellow**** Preparing Modules ****$nocol"
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                modules_prepare || {
-                echo "Error preparing modules"
-                exit 1
+            make \
+                "${MAKE_FLAGS[@]}" \
+                modules_prepare \
+                "-j$(nproc)" \
+                INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                2>&1 | tee -a build.log || {
+                    echo "Error preparing modules"
+                    exit 1
             }
+            echo #blank line
 
             echo -e "$yellow**** Building Modules ****$nocol"
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                modules INSTALL_MOD_PATH="$KERNELDIR"/out/modules || {
-                echo "Error building modules"
-                exit 1
+            make \
+                "${MAKE_FLAGS[@]}" \
+                modules \
+                INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                "-j$(nproc)" \
+                2>&1 | tee -a build.log || {
+                    echo "Error building modules"
+                    exit 1
             }
+            echo #blank line
             echo -e "$yellow**** Installing Modules ****$nocol"
 
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                modules_install INSTALL_MOD_PATH="$KERNELDIR"/out/modules || {
-                echo "Error installing modules"
-                exit 1
+            make \
+                "${MAKE_FLAGS[@]}" \
+                modules_install \
+                INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                "-j$(nproc)" \
+                 2>&1 | tee -a build.log || {
+                    echo "Error installing modules"
+                    exit 1
             }
+            echo #blank line
         fi
 
         echo -e "$blue***********************************************"
@@ -398,9 +483,14 @@ APPLY_PATCHES() {
         Enable_KernelSU-Next
     fi
 
+    if [[ "$ENABLE_SUKISU" == "1" ]]; then
+        log_section "Applying SUKISU setup"
+        Enable_SUKISU-ultra
+    fi
+
     # 3) Apply SUSFS patches (into main tree, and into KernelSU tree if enabled)
     if [[ "$PATCH_SUSFS" == "1" ]]; then
-        log_section "Applying SUSFS patches"
+        log_section "Cloning and Applying SUSFS patches"
         SUSFS_Patch
     fi
 }
@@ -417,7 +507,7 @@ SUSFS_Patch() {
         
         # 1.5) Optional checkout
         if [[ -n "$SUSFS_CHECKOUT_HASH" ]]; then
-            echo -e "${blue}[SUSFS] Checking out commit $SUSFS_CHECKOUT_HASH…${nocol}"
+            echo -e "${blue}[SUSFS: Checkout hash set, Switching to detached head..] Checking out commit $SUSFS_CHECKOUT_HASH…${nocol}"
             (cd susfs4ksu && git checkout "$SUSFS_CHECKOUT_HASH") \
                 || { echo -e "${red}[SUSFS] Checkout $SUSFS_CHECKOUT_HASH failed${nocol}"; exit 1; }
             cd "$KERNELDIR" || exit 1
@@ -433,11 +523,11 @@ SUSFS_Patch() {
         cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android13-5.15.patch .
 
         # 4) Apply the patch, with conflict handling
-        log_section " Now Applying SUSFS Patches "
+        log_section "Started Applying SUSFS Patches "
         if patch -p1 --fuzz=3 < 50_add_susfs_in_gki-android13-5.15.patch; then
             echo -e "${green}SUSFS Patch applied successfully.${nocol}"
             if [[ "$ENABLE_KSU" == "1" ]]; then
-                log_section "Applying SUSFS Patches to KernelSU"
+                log_section "Started Applying SUSFS Patches to KernelSU"
                 cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
                 cd KernelSU
                 if patch -p1 --fuzz=3 < 10_enable_susfs_for_ksu.patch; then
@@ -445,6 +535,9 @@ SUSFS_Patch() {
                     rm -f 10_enable_susfs_for_ksu.patch
                     cd $KERNELDIR
                 fi
+            fi
+            if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
+                read -p "Breakpoint after applying SUSFS patch Detected! Press Enter to continue..."
             fi
             echo -e "${yellow}Removing susfs4ksu directory and patch file...${nocol}"
             rm -rf susfs4ksu 50_add_susfs_in_gki-android13-5.15.patch
@@ -463,23 +556,53 @@ Enable_KernelSU-Next() {
     if [[ "$ENABLE_KSU_NEXT" == "1" ]]; then
         if [[ "$PATCH_SUSFS" == "1" ]]; then
 
-            if [[ "$KERNELSU_NEXT_STABLE" == "1" ]]; then
+            if [[ "$KSU_NEXT_STABLE" == "1" ]]; then
                 echo -e "${blue}Cloning KernelSU-Next (SUSFS Stable Branch) ...…${nocol}"
                 curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s next-susfs
+                if [[ -n "$KSUN_CHECKOUT_HASH" ]]; then
+                    echo -e "${blue}[KernelSU-Next SUSFS Stable: Checkout hash set, Switching to detached head..] Checking out commit $KSUN_CHECKOUT_HASH…${nocol}"
+                    (cd KernelSU-Next && git checkout "$KSUN_CHECKOUT_HASH") \
+                        || { echo -e "${red}[KernelSU-Next_Stable] Checkout $KSUN_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                    cd "$KERNELDIR" || exit 1
+                fi
             else
                 echo -e "${blue}Cloning KernelSU-Next (SUSFS Development Branch) ...…${nocol}"
                 curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s next-susfs-dev
+                if [[ -n "$KSUN_CHECKOUT_HASH" ]]; then
+                    echo -e "${blue}[KernelSU-Next SUSFS Development: Checkout hash set, Switching to detached head..] Checking out commit $KSUN_CHECKOUT_HASH…${nocol}"
+                    (cd KernelSU-Next && git checkout "$KSUN_CHECKOUT_HASH") \
+                        || { echo -e "${red}[KernelSU-Next_Development] Checkout $KSUN_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                    cd "$KERNELDIR" || exit 1
+                fi
             fi
             echo -e "${green}KernelSU-Next (SUSFS) framework clonning and setup done!.${nocol}"
+            if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
+                read -p "Breakpoint after Cloning KernelSU-Next SUSFS Detected! Press Enter to continue..."
+            fi
         else
-            if [[ "$KERNELSU_NEXT_STABLE" == "1" ]]; then
+            if [[ "$KSU_NEXT_STABLE" == "1" ]]; then
                 echo -e "${blue}Cloning KernelSU-Next Latest release.... …${nocol}"
                 curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
+                if [[ -n "$KSUN_CHECKOUT_HASH" ]]; then
+                    echo -e "${blue}[KernelSU-Next Stable: Checkout hash set, Switching to detached head..] Checking out commit $KSUN_CHECKOUT_HASH…${nocol}"
+                    (cd KernelSU-Next && git checkout "$KSUN_CHECKOUT_HASH") \
+                        || { echo -e "${red}[KernelSU-Next_Stable] Checkout $KSUN_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                    cd "$KERNELDIR" || exit 1
+                fi
             else
                 echo -e "${blue}Cloning KernelSU-Next Next Development release.... …${nocol}"
                 curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+                if [[ -n "$KSUN_CHECKOUT_HASH" ]]; then
+                    echo -e "${blue}[KernelSU-Next Development: Checkout hash set, Switching to detached head..] Checking out commit $KSUN_CHECKOUT_HASH…${nocol}"
+                    (cd KernelSU-Next && git checkout "$KSUN_CHECKOUT_HASH") \
+                        || { echo -e "${red}[KernelSU-Next_Development] Checkout $KSUN_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                    cd "$KERNELDIR" || exit 1
+                fi
             fi
             echo -e "${green}KernelSU-Next framework clonning and setup done!.${nocol}"
+            if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
+                read -p "Breakpoint after Cloning KernelSU-Next Detected! Press Enter to continue..."
+            fi
         fi
     fi
 
@@ -491,10 +614,71 @@ Enable_KernelSU() {
     if [[ "$ENABLE_KSU" == "1" ]]; then
         echo -e "${blue}Cloning KernelSU .... …${nocol}"
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+        if [[ -n "$KSU_CHECKOUT_HASH" ]]; then
+            echo -e "${blue}[KernelSU: Checkout hash set, Switching to detached head..] Checking out commit $KSU_CHECKOUT_HASH…${nocol}"
+            (cd KernelSU && git checkout "$KSU_CHECKOUT_HASH") \
+                || { echo -e "${red}[KernelSU] Checkout $KSU_CHECKOUT_HASH failed${nocol}"; exit 1; }
+            cd "$KERNELDIR" || exit 1
+        fi
         echo -e "${green}KernelSU framework clonning and setup done!.${nocol}"
+        if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
+            read -p "Breakpoint after Cloning KernelSU Detected! Press Enter to continue..."
+        fi
     fi
 }
 
+Enable_SUKISU-ultra() {
+    cd $KERNELDIR
+    if [[ "$ENABLE_SUKISU" == "1" ]]; then
+        if [[ "$PATCH_SUSFS" == "1" ]]; then
+
+            if [[ "$SUKISU_STABLE" == "1" ]]; then
+                echo -e "${blue}Cloning SUKISU (SUSFS) Stable branch and setting it up .... …${nocol}"
+                curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-stable
+                if [[ -n "$SUKI_CHECKOUT_HASH" ]]; then
+                    echo -e "${blue}[SUKISU SUSFS Stable: Checkout hash set, Switching to detached head..] Checking out commit $SUKI_CHECKOUT_HASH…${nocol}"
+                    (cd KernelSU && git checkout "$SUKI_CHECKOUT_HASH") \
+                        || { echo -e "${red}[SUKISU_SUSFS_Stable:] Checkout $SUKI_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                    cd "$KERNELDIR" || exit 1
+                fi
+            else
+                echo -e "${blue}Cloning SUKISU (SUSFS) Development branch and setting it up .... …${nocol}"
+                curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
+                if [[ -n "$SUKI_CHECKOUT_HASH" ]]; then
+                    echo -e "${blue}[SUKISU SUSFS: Checkout hash set, Switching to detached head..] Checking out commit $SUKI_CHECKOUT_HASH…${nocol}"
+                    (cd KernelSU && git checkout "$SUKI_CHECKOUT_HASH") \
+                        || { echo -e "${red}[SUKISU_SUSFS_Development:] Checkout $SUKI_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                    cd "$KERNELDIR" || exit 1
+                fi
+            fi
+            echo -e "${green}SUKISU (SUSFS) framework clonning and setup done!.${nocol}"
+            echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
+            ./scripts/config \
+                --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                --enable KPM
+            if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
+                read -p "Breakpoint after Cloning SUKISU SUSFS Detected! Press Enter to continue..."
+            fi
+        else
+            echo -e "${blue}Cloning SUKISU and setting it up .... …${nocol}"
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+            if [[ -n "$SUKI_CHECKOUT_HASH" ]]; then
+                echo -e "${blue}[SUKISU: Checkout hash set, Switching to detached head..] Checking out commit $SUKI_CHECKOUT_HASH…${nocol}"
+                (cd KernelSU && git checkout "$SUKI_CHECKOUT_HASH") \
+                    || { echo -e "${red}[SUKISU:] Checkout $SUKI_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                cd "$KERNELDIR" || exit 1
+            fi
+            echo -e "${green}SUKISU framework clonning and setup done!.${nocol}"
+            echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
+            ./scripts/config \
+                --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                --enable KPM
+            if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
+                read -p "Breakpoint after Cloning SUKISU Detected! Press Enter to continue..."
+            fi
+        fi
+    fi
+}
 
 Final_CLEANUP() {
     cd "$KERNELDIR" || exit 1
@@ -505,16 +689,26 @@ Final_CLEANUP() {
           "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
           | bash -s -- --cleanup \
           || { echo -e "${red}KernelSU cleanup failed!${nocol}"; exit 1; }
+    fi
 
-    elif [[ "$ENABLE_KSU_NEXT" == "1" ]]; then
+    if [[ "$ENABLE_KSU_NEXT" == "1" ]]; then
         log_section "Final Clean: Removing KernelSU-Next Framework"
         curl -fsSL \
           "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" \
           | bash -s -- --cleanup \
           || { echo -e "${red}KernelSU-Next cleanup failed!${nocol}"; exit 1; }
     fi
+
+    if [[ "$ENABLE_SUKISU" == "1" ]]; then
+        log_section "Final Clean: Removing SUKISU Framework"
+        curl -fsSL \
+          "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" \
+          | bash -s -- --cleanup \
+          || { echo -e "${red}KernelSU-Next cleanup failed!${nocol}"; exit 1; }
+    fi
+
     log_section "To reset repository to pristine state and clean SUSFS patches, run the following command:"
-    echo -e "${red}Warning! Running this command will also reset any uncommited changes that haven't been pushed yet!${nocol}"
+    echo -e "${blue}Warning! Running this command will also reset any uncommited changes that haven't been pushed yet!${nocol}"
     echo
     echo -e "${yellow}git reset --hard HEAD && git clean -xfd${nocol}"
 }
