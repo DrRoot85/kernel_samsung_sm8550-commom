@@ -55,12 +55,14 @@ SUSFS_CHECKOUT_HASH=""         # If non‐empty, SUSFS_Patch will checkout this 
 # ---------------------- | Enable either KernelSU or KernelSU-Next or SUKISU, DO NOT ENABLE BOTH OR ALL! | ----------------------------#
 
 # ====================================== # | KernelSU-Next Options
-ENABLE_KSU_NEXT=0              # 1=Use KernelSU-Next                    | 0=Skip
+ENABLE_KSU_NEXT=1              # 1=Use KernelSU-Next                    | 0=Skip
 KSU_NEXT_STABLE=1         # 1=Use KernelSU-Next stable branches    | 0=Use KernelSU-Next Development branches. | (Only works if ENABLE_KSU_NEXT=1)
+KSU_NEXT_MANUAL_HOOKS=1        # 1=Use Manual Hooks instead of using kprobes         | 0=Use Kprobes Hooks (default)
 # Setting Checkout hash ignores / disables KSU_NEXT_STABLE
 # If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
 KSUN_CHECKOUT_HASH=""
-#KSUN_CHECKOUT_HASH="505502a173705243b2042bc055c43fe9d319a49e"
+#KSUN_CHECKOUT_HASH="c6d8160611d5fa57425924ac956ba865252e4040"  # Tested and confirmed manual hooks works with susfs 1.5.7
+# If you get compilation error compiling ksu-next_susfs 1.5.7, have a look: https://github.com/KernelSU-Next/KernelSU-Next/issues/426
 # -----------------------------------------------------------------------------------------
 
 # ====================================== # | SUKISU-Ultra Options
@@ -71,7 +73,7 @@ SUKISU_STABLE=0                # 1=Use SUKISU SUSFS Stable branches    | 0=Use S
 SUKI_CHECKOUT_HASH=""
 
 # ====================================== # | KernelSU Options
-ENABLE_KSU=1                   # 1=Use KernelSU                         | 0=Skip. | (Auto applies KernelSU SUSFS patches if PATCH_SUSFS=1)
+ENABLE_KSU=0                   # 1=Use KernelSU                         | 0=Skip. | (Auto applies KernelSU SUSFS patches if PATCH_SUSFS=1)
 # If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
 KSU_CHECKOUT_HASH=""
 
@@ -592,6 +594,29 @@ Enable_KernelSU-Next() {
             echo -e "${green}KernelSU-Next framework clonning and setup done!.${nocol}"
             if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
                 read -p "Breakpoint after Cloning KernelSU-Next Detected! Press Enter to continue..."
+            fi
+        fi
+        if [[ "$KSU_NEXT_MANUAL_HOOKS" == "1" ]]; then
+            log_section "Started Applying KernelSU-Next Manual Hook Patches "
+            if ! cp KSUN_Manual-Hooks.diff KSUN_Manual-Hooks.patch; then
+                echo -e "${red}KSUN-Next manual hook patch not found in $KERNELDIR ! Aborting.${nocol}"
+                exit 1
+            fi
+            if patch -p1 --fuzz=3 < KSUN_Manual-Hooks.patch; then
+                echo -e "${green}KernelSU-Next Manual Hook Patch applied successfully.${nocol}"
+                rm -f KSUN_Manual-Hooks.patch
+                echo -e "${blue}Disabling KSU_KPROBES_HOOK and other configs in defconfig .... …${nocol}"
+                ./scripts/config \
+                    --file arch/arm64/configs/gki_defconfig \
+                    --disable KSU_KPROBES_HOOK
+                if [[ "$PATCH_SUSFS" == "1" ]]; then
+                    ./scripts/config \
+                        --file arch/arm64/configs/gki_defconfig \
+                        --disable KSU_SUSFS_SUS_SU
+                    ./scripts/config \
+                        --file arch/arm64/configs/gki_defconfig \
+                        --disable KSU_SUSFS_ENABLE_LOG
+                fi
             fi
         fi
     fi
