@@ -1201,14 +1201,11 @@ static u32 dwc3_calc_trbs_left(struct dwc3_ep *dep)
 	 * pending to be processed by the driver.
 	 */
 	if (dep->trb_enqueue == dep->trb_dequeue) {
-		struct dwc3_request *req;
-
 		/*
-		 * If there is any request remained in the started_list with
-		 * active TRBs at this point, then there is no TRB available.
+		 * If there is any request remained in the started_list at
+		 * this point, that means there is no TRB available.
 		 */
-		req = next_request(&dep->started_list);
-		if (req && req->num_trbs)
+		if (!list_empty(&dep->started_list))
 			return 0;
 
 		return DWC3_TRB_NUM - 1;
@@ -1436,8 +1433,8 @@ static int dwc3_prepare_trbs_sg(struct dwc3_ep *dep,
 	struct scatterlist *s;
 	int		i;
 	unsigned int length = req->request.length;
-	unsigned int remaining = req->num_pending_sgs;
-	unsigned int num_queued_sgs = req->request.num_mapped_sgs - remaining;
+	unsigned int remaining = req->request.num_mapped_sgs
+		- req->num_queued_sgs;
 	unsigned int num_trbs = req->num_trbs;
 	bool needs_extra_trb = dwc3_needs_extra_trb(dep, req);
 
@@ -1445,7 +1442,7 @@ static int dwc3_prepare_trbs_sg(struct dwc3_ep *dep,
 	 * If we resume preparing the request, then get the remaining length of
 	 * the request and resume where we left off.
 	 */
-	for_each_sg(req->request.sg, s, num_queued_sgs, i)
+	for_each_sg(req->request.sg, s, req->num_queued_sgs, i)
 		length -= sg_dma_len(s);
 
 	for_each_sg(sg, s, remaining, i) {
@@ -2086,6 +2083,12 @@ static int dwc3_gadget_ep_dequeue(struct usb_ep *ep,
 			goto out;
 	}
 
+	if (dep->pending_list.next == NULL) {
+		pr_err("Error: dep->pending_list is NULL or uninitialized\n");
+		ret = -EINVAL;
+		goto out;
+	}
+
 	list_for_each_entry(r, &dep->pending_list, list) {
 		if (r == req) {
 			/*
@@ -2605,6 +2608,12 @@ static int dwc3_gadget_soft_disconnect(struct dwc3 *dwc)
 	return ret;
 }
 
+static int dwc3_gadget_soft_connect(struct dwc3 *dwc)
+{
+	__dwc3_gadget_start(dwc);
+	return dwc3_gadget_run_stop(dwc, true);
+}
+
 static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 {
 	struct dwc3		*dwc = gadget_to_dwc(g);
@@ -2648,23 +2657,10 @@ static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 		pr_err("[dwc3 debug] %s: dwc3 pullup 0\n", __func__);
 		ret = dwc3_gadget_soft_disconnect(dwc);
 	} else {
-		/*
-		 * In the Synopsys DWC_usb31 1.90a programming guide section
-		 * 4.1.9, it specifies that for a reconnect after a
-		 * device-initiated disconnect requires a core soft reset
-		 * (DCTL.CSftRst) before enabling the run/stop bit.
-		 */
 		pr_err("[dwc3 debug] %s: dwc3 pullup 1\n", __func__);
-		ret = dwc3_core_soft_reset(dwc);
-		if (ret)
-			goto done;
-
-		dwc3_event_buffers_setup(dwc);
-		__dwc3_gadget_start(dwc);
-		ret = dwc3_gadget_run_stop(dwc, true);
+		ret = dwc3_gadget_soft_connect(dwc);
 	}
 
-done:
 	pm_runtime_put(dwc->dev);
 
 	return ret;
@@ -4578,38 +4574,35 @@ void dwc3_gadget_exit(struct dwc3 *dwc)
 int dwc3_gadget_suspend(struct dwc3 *dwc)
 {
 	unsigned long flags;
+	int ret;
 
-	dwc3_gadget_run_stop(dwc, false);
+	ret = dwc3_gadget_soft_disconnect(dwc);
+	if (ret)
+		goto err;
 
 	spin_lock_irqsave(&dwc->lock, flags);
 	if (dwc->gadget_driver)
 		dwc3_disconnect_gadget(dwc);
-	__dwc3_gadget_stop(dwc);
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
 	return 0;
+
+err:
+	/*
+	 * Attempt to reset the controller's state. Likely no
+	 * communication can be established until the host
+	 * performs a port reset.
+	 */
+	if (dwc->softconnect)
+		dwc3_gadget_soft_connect(dwc);
+
+	return ret;
 }
 
 int dwc3_gadget_resume(struct dwc3 *dwc)
 {
-	int			ret;
-
 	if (!dwc->gadget_driver || !dwc->softconnect)
 		return 0;
 
-	ret = __dwc3_gadget_start(dwc);
-	if (ret < 0)
-		goto err0;
-
-	ret = dwc3_gadget_run_stop(dwc, true);
-	if (ret < 0)
-		goto err1;
-
-	return 0;
-
-err1:
-	__dwc3_gadget_stop(dwc);
-
-err0:
-	return ret;
+	return dwc3_gadget_soft_connect(dwc);
 }

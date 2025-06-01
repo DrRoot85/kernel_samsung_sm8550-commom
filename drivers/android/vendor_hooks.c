@@ -107,6 +107,7 @@
 #include <trace/hooks/evdev.h>
 #include <trace/hooks/signal.h>
 #include <trace/hooks/cfg80211.h>
+#include <trace/hooks/mz.h>
 #include <trace/hooks/bl_hib.h>
 #include <trace/hooks/xhci.h>
 #include <trace/hooks/dm.h>
@@ -437,6 +438,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_usb_dev_suspend);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_usb_dev_resume);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_xhci_suspend);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_xhci_resume);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mz_exit);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_modify_thermal_cpu_get_power);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_page_cache_forced_ra);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_queue_request_and_unlock);

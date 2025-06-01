@@ -662,7 +662,6 @@ config HAS_LTO_CLANG
 	depends on ARCH_SUPPORTS_LTO_CLANG
 	depends on !FTRACE_MCOUNT_USE_RECORDMCOUNT
 	depends on !KASAN || KASAN_HW_TAGS
-	depends on !GCOV_KERNEL
 	help
 	  The compiler and Kconfig options support building with Clang's
 	  LTO.
@@ -760,6 +759,13 @@ config CFI_PERMISSIVE
 	  for finding indirect call type mismatches during development.
 
 	  If unsure, say N.
+
+config LLVM_POLLY
+	bool "Enable LLVM's polyhedral loop optimizer (Polly)"
+	help
+	  This option enables LLVM's polyhedral loop optimizer known as Polly.
+	  Polly can optimize loops in the kernel for improved cache locality.
+	  This requires an LLVM toolchain explicitly compiled with Polly support.
 
 config HAVE_ARCH_WITHIN_STACK_FRAMES
 	bool

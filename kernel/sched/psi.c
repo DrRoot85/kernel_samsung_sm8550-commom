@@ -150,8 +150,10 @@
 #include <linux/poll.h>
 #include <linux/psi.h>
 #include "sched.h"
-
 #include <trace/hooks/psi.h>
+#ifdef CONFIG_PROC_FSLOG
+#include <linux/fslog.h>
+#endif
 
 static int psi_bug __read_mostly;
 
@@ -356,6 +358,11 @@ static void collect_percpu_times(struct psi_group *group,
 	int cpu;
 	int s;
 
+#ifdef CONFIG_PROC_PSI_LOG
+	char buf[1024];
+	int pos = 0;
+#endif
+
 	/*
 	 * Collect the per-cpu time buckets and average them into a
 	 * single time sample that is normalized to wallclock time.
@@ -378,7 +385,18 @@ static void collect_percpu_times(struct psi_group *group,
 
 		for (s = 0; s < PSI_NONIDLE; s++)
 			deltas[s] += (u64)times[s] * nonidle;
+
+#ifdef CONFIG_PROC_PSI_LOG
+		pos += sprintf(buf + pos, "%d,%d,", times[PSI_CPU_SOME] / 1000000,
+				jiffies_to_msecs(nonidle));
+#endif
 	}
+
+#ifdef CONFIG_PROC_PSI_LOG
+	if (aggregator == PSI_POLL) {
+		PSI_LOG("%s", buf);
+	}
+#endif
 
 	/*
 	 * Integrate the sample into the running statistics that are
@@ -482,7 +500,7 @@ static void psi_avgs_work(struct work_struct *work)
 		group->avg_next_update = update_averages(group, now);
 
 	if (nonidle) {
-		schedule_delayed_work(dwork, nsecs_to_jiffies(
+		queue_delayed_work(system_power_efficient_wq, dwork, nsecs_to_jiffies(
 				group->avg_next_update - now) + 1);
 	}
 
@@ -833,7 +851,7 @@ static void psi_group_change(struct psi_group *group, int cpu,
 		psi_schedule_poll_work(group, 1, false);
 
 	if (wake_clock && !delayed_work_pending(&group->avgs_work))
-		schedule_delayed_work(&group->avgs_work, PSI_FREQ);
+		queue_delayed_work(system_power_efficient_wq, &group->avgs_work, PSI_FREQ);
 }
 
 static struct psi_group *iterate_groups(struct task_struct *task, void **iter)

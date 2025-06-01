@@ -937,14 +937,14 @@ Retry_Sense:
 	 * the reset may proceed.
 	 */
 #ifdef CONFIG_USB_DEBUG_DETAILED_LOG
-	printk(KERN_ERR "usb-storage: %s scsi_lock 1\n", __func__);
+	printk(KERN_ERR USB_STORAGE "%s scsi_lock 1\n", __func__);
 #endif
 	scsi_lock(us_to_host(us));
 	set_bit(US_FLIDX_RESETTING, &us->dflags);
 	clear_bit(US_FLIDX_ABORTING, &us->dflags);
 	scsi_unlock(us_to_host(us));
 #ifdef CONFIG_USB_DEBUG_DETAILED_LOG
-	printk(KERN_ERR "usb-storage: %s scsi_unlock 1\n", __func__);
+	printk(KERN_ERR USB_STORAGE "%s scsi_unlock 1\n", __func__);
 #endif
 
 	/*
@@ -957,13 +957,13 @@ Retry_Sense:
 
 	if (result < 0) {
 #ifdef CONFIG_USB_DEBUG_DETAILED_LOG
-		printk(KERN_ERR "usb-storage: %s scsi_lock 2\n", __func__);
+		printk(KERN_ERR USB_STORAGE "%s scsi_lock 2\n", __func__);
 #endif
 		scsi_lock(us_to_host(us));
 		usb_stor_report_device_reset(us);
 		scsi_unlock(us_to_host(us));
 #ifdef CONFIG_USB_DEBUG_DETAILED_LOG
-		printk(KERN_ERR "usb-storage: %s scsi_unlock 2\n", __func__);
+		printk(KERN_ERR USB_STORAGE "%s scsi_unlock 2\n", __func__);
 #endif
 		us->transport_reset(us);
 	}

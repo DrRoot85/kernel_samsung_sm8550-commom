@@ -323,4 +323,6 @@ source "drivers/input/sec_input/stm_spi/Kconfig"
 
 source "drivers/mfd/slsi/s2mpb02/Kconfig"
 
+source "drivers/knox/Kconfig"
+
 endmenu

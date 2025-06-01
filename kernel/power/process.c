@@ -28,7 +28,8 @@
 /*
  * Timeout for stopping processes
  */
-unsigned int __read_mostly freeze_timeout_msecs = 20 * MSEC_PER_SEC;
+unsigned int __read_mostly freeze_timeout_msecs =
+	IS_ENABLED(CONFIG_ANDROID) ? MSEC_PER_SEC : 5 * MSEC_PER_SEC;
 
 static int try_to_freeze_tasks(bool user_only)
 {
@@ -135,9 +136,11 @@ int freeze_processes(void)
 {
 	int error;
 
+	pr_info("Disabling usermodehelper ... ");
 	error = __usermodehelper_disable(UMH_FREEZING);
 	if (error)
 		return error;
+	pr_cont("done.\n");
 
 	/* Make sure this task doesn't get frozen */
 	current->flags |= PF_SUSPEND_TASK;
