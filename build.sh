@@ -29,7 +29,7 @@ echo -e " $yellow #####|       top of the script to enable KernelSU patches   |#
 
 # ---------------------------------------------------------------------------------------------------------------- #
 # ---------------------------| EXPORTS and Directory Setup |------------------------------------------------------ #
-KERNEL_DEFCONFIG=gki_defconfig  # Looks for defconfig in arch/<exported_arch>/configs/
+KERNEL_DEFCONFIG=kalama-dm3q_defconfig  # Looks for defconfig in arch/<exported_arch>/configs/
 ANYKERNEL3_DIR=$PWD/AnyKernel3/ # Required by the function zip_kernel
 CLANG_VERSION=clang-r547379
 CLANG_DIR="/home/akm/Git/Clang/$CLANG_VERSION"
@@ -44,7 +44,7 @@ export KBUILD_COMPILER_STRING="$($CLANG_BINARY --version | head -n 1 | perl -pe 
 
 ARTIFACT="Image.gz"            # Variable to hold the name of the final kernel artifact. Change as required.
 BUILD_MODULES="n"              # "y" = Enabled | "n" = Disabled
-ENABLE_BREAKPOINTS=1           # Enabled all breakpoints in the script to interrupt after specific steps to maybe apply a manual patch.
+ENABLE_BREAKPOINTS=0           # Enabled all breakpoints in the script to interrupt after specific steps to maybe apply a manual patch.
 # -----------------------------------------------------------------------------------------
 PATCH_SUSFS=1                  # 1=Apply SUSFS patch from simonpunk repo     | 0=skip
 SUSFS_CHECKOUT_HASH=""         # If non‐empty, SUSFS_Patch will checkout this commit after cloning.
