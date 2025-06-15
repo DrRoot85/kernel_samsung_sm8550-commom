@@ -1247,7 +1247,8 @@ static void quirk_usb_early_handoff(struct pci_dev *pdev)
 	/* Skip Netlogic mips SoC's internal PCI USB controller.
 	 * This device does not need/support EHCI/OHCI handoff
 	 */
-	if (pdev->vendor == 0x184e)	/* vendor Netlogic */
+	if (pdev->vendor == 0x184e ||	/* vendor Netlogic */
+		(pdev->vendor == 0x1912 && pdev->device == 0x14))	/* vendor Renesas */
 		return;
 
 	/*

@@ -2107,7 +2107,7 @@ CONFIG_WIREGUARD=y
 CONFIG_IFB=y
 # CONFIG_NET_TEAM is not set
 # CONFIG_MACVLAN is not set
-# CONFIG_IPVLAN is not set
+CONFIG_IPVLAN=y
 # CONFIG_VXLAN is not set
 # CONFIG_GENEVE is not set
 # CONFIG_BAREUDP is not set
