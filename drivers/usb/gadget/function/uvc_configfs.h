@@ -40,6 +40,7 @@ static inline struct uvcg_control_header *to_uvcg_control_header(struct config_i
 enum uvcg_format_type {
 	UVCG_UNCOMPRESSED = 0,
 	UVCG_MJPEG,
+	UVCG_H264,
 };
 
 struct uvcg_format {
@@ -82,20 +83,11 @@ struct uvcg_frame_ptr {
 struct uvcg_frame {
 	struct config_item	item;
 	enum uvcg_format_type	fmt_type;
-	struct {
-		u8	b_length;
-		u8	b_descriptor_type;
-		u8	b_descriptor_subtype;
-		u8	b_frame_index;
-		u8	bm_capabilities;
-		u16	w_width;
-		u16	w_height;
-		u32	dw_min_bit_rate;
-		u32	dw_max_bit_rate;
-		u32	dw_max_video_frame_buffer_size;
-		u32	dw_default_frame_interval;
-		u8	b_frame_interval_type;
-	} __attribute__((packed)) frame;
+	union {
+                struct uvc_frame_uncompressed uf;
+                struct uvc_frame_mjpeg mf;
+                struct uvc_frame_h264 hf;
+        } frame;
 	u32 *dw_frame_interval;
 };
 

@@ -70,7 +70,7 @@
 static int drm_legacy_irq_install(struct drm_device *dev, int irq)
 {
 	int ret;
-	unsigned long sh_flags = 0;
+	unsigned long sh_flags = IRQF_PRIME_AFFINE;
 
 	if (irq == 0)
 		return -EINVAL;

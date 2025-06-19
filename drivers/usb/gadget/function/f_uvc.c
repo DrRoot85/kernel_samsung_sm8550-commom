@@ -263,12 +263,9 @@ uvc_function_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	return 0;
 }
 
-void uvc_function_setup_continue(struct uvc_device *uvc, int disable_ep)
+void uvc_function_setup_continue(struct uvc_device *uvc)
 {
 	struct usb_composite_dev *cdev = uvc->func.config->cdev;
-
-	if (disable_ep && uvc->video.ep)
-		usb_ep_disable(uvc->video.ep);
 
 	usb_composite_setup_continue(cdev);
 }
@@ -340,11 +337,15 @@ uvc_function_set_alt(struct usb_function *f, unsigned interface, unsigned alt)
 		if (uvc->state != UVC_STATE_STREAMING)
 			return 0;
 
+		if (uvc->video.ep)
+			usb_ep_disable(uvc->video.ep);
+
 		memset(&v4l2_event, 0, sizeof(v4l2_event));
 		v4l2_event.type = UVC_EVENT_STREAMOFF;
 		v4l2_event_queue(&uvc->vdev, &v4l2_event);
 
-		return USB_GADGET_DELAYED_STATUS;
+		uvc->state = UVC_STATE_CONNECTED;
+		return 0;
 
 	case 1:
 		if (uvc->state != UVC_STATE_CONNECTED)
@@ -838,20 +839,21 @@ static struct usb_function_instance *uvc_alloc_inst(void)
 	cd->wObjectiveFocalLengthMax	= cpu_to_le16(0);
 	cd->wOcularFocalLength		= cpu_to_le16(0);
 	cd->bControlSize		= 3;
-	cd->bmControls[0]		= 2;
-	cd->bmControls[1]		= 0;
-	cd->bmControls[2]		= 0;
+	cd->bmControls[0]		= 62;
+	cd->bmControls[1]		= 126;
+	cd->bmControls[2]		= 10;
 
 	pd = &opts->uvc_processing;
-	pd->bLength			= UVC_DT_PROCESSING_UNIT_SIZE(2);
+	pd->bLength			= UVC_DT_PROCESSING_UNIT_SIZE(3);
 	pd->bDescriptorType		= USB_DT_CS_INTERFACE;
 	pd->bDescriptorSubType		= UVC_VC_PROCESSING_UNIT;
 	pd->bUnitID			= 2;
 	pd->bSourceID			= 1;
 	pd->wMaxMultiplier		= cpu_to_le16(16*1024);
-	pd->bControlSize		= 2;
-	pd->bmControls[0]		= 1;
-	pd->bmControls[1]		= 0;
+	pd->bControlSize		= 3;
+	pd->bmControls[0]		= 91;
+	pd->bmControls[1]		= 23;
+	pd->bmControls[2]		= 4;
 	pd->iProcessing			= 0;
 	pd->bmVideoStandards		= 0;
 

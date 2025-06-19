@@ -508,4 +508,7 @@ config VIRTIO_EAVB
 	  means ethernet Audio Video Bridging. It provides unified ioctl
 	  interface for userspace. Say Y if you want to support virtual
 	  eavb.
+
+source "drivers/char/lrng/Kconfig"
+
 endmenu

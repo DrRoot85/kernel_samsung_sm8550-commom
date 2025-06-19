@@ -1220,7 +1220,18 @@ static int cpu_down_maps_locked(unsigned int cpu, enum cpuhp_state target)
 
 static int cpu_down(unsigned int cpu, enum cpuhp_state target)
 {
+	struct cpumask newmask;
 	int err;
+	
+	preempt_disable();
+	cpumask_andnot(&newmask, cpu_online_mask, cpumask_of(cpu));
+	preempt_enable();
+
+	/* One big, LITTLE, and prime CPU must remain online */
+	if (!cpumask_intersects(&newmask, cpu_lp_mask) ||
+	    !cpumask_intersects(&newmask, cpu_perf_mask) ||
+	    !cpumask_intersects(&newmask, cpu_prime_mask))
+		return -EINVAL;
 
 	cpu_maps_update_begin();
 	err = cpu_down_maps_locked(cpu, target);
@@ -1552,6 +1563,7 @@ int freeze_secondary_cpus(int primary)
 	int cpu, error = 0;
 
 	cpu_maps_update_begin();
+	unaffine_perf_irqs();
 	if (primary == -1) {
 		primary = cpumask_first(cpu_online_mask);
 		if (!housekeeping_cpu(primary, HK_FLAG_TIMER))
@@ -1641,6 +1653,7 @@ void thaw_secondary_cpus(void)
 	arch_thaw_secondary_cpus_end();
 
 	cpumask_clear(frozen_cpus);
+	reaffine_perf_irqs(false);
 out:
 	cpu_maps_update_done();
 }
@@ -2694,6 +2707,30 @@ EXPORT_SYMBOL(__cpu_dying_mask);
 
 atomic_t __num_online_cpus __read_mostly;
 EXPORT_SYMBOL(__num_online_cpus);
+
+#if CONFIG_LITTLE_CPU_MASK
+static const unsigned long lp_cpu_bits = CONFIG_LITTLE_CPU_MASK;
+const struct cpumask *const cpu_lp_mask = to_cpumask(&lp_cpu_bits);
+#else
+const struct cpumask *const cpu_lp_mask = cpu_possible_mask;
+#endif
+EXPORT_SYMBOL(cpu_lp_mask);
+
+#if CONFIG_BIG_CPU_MASK
+static const unsigned long perf_cpu_bits = CONFIG_BIG_CPU_MASK;
+const struct cpumask *const cpu_perf_mask = to_cpumask(&perf_cpu_bits);
+#else
+const struct cpumask *const cpu_perf_mask = cpu_possible_mask;
+#endif
+EXPORT_SYMBOL(cpu_perf_mask);
+
+#if CONFIG_PRIME_CPU_MASK
+static const unsigned long prime_cpu_bits = CONFIG_PRIME_CPU_MASK;
+const struct cpumask *const cpu_prime_mask = to_cpumask(&prime_cpu_bits);
+#else
+const struct cpumask *const cpu_prime_mask = cpu_possible_mask;
+#endif
+EXPORT_SYMBOL(cpu_prime_mask);
 
 void init_cpu_present(const struct cpumask *src)
 {

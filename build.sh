@@ -55,7 +55,7 @@ SUSFS_CHECKOUT_HASH=""         # If non‐empty, SUSFS_Patch will checkout this 
 # ---------------------- | Enable either KernelSU or KernelSU-Next or SUKISU, DO NOT ENABLE BOTH OR ALL! | ----------------------------#
 
 # ====================================== # | KernelSU-Next Options
-ENABLE_KSU_NEXT=1              # 1=Use KernelSU-Next                    | 0=Skip
+ENABLE_KSU_NEXT=0              # 1=Use KernelSU-Next                    | 0=Skip
 KSU_NEXT_STABLE=1         # 1=Use KernelSU-Next stable branches    | 0=Use KernelSU-Next Development branches. | (Only works if ENABLE_KSU_NEXT=1)
 KSU_NEXT_MANUAL_HOOKS=1        # 1=Use Manual Hooks instead of using kprobes         | 0=Use Kprobes Hooks (default)
 # Setting Checkout hash ignores / disables KSU_NEXT_STABLE
@@ -66,9 +66,8 @@ KSUN_CHECKOUT_HASH=""
 # -----------------------------------------------------------------------------------------
 
 # ====================================== # | SUKISU-Ultra Options
-ENABLE_SUKISU=0                # 1=Use SUKISU                           | 0=Skip
-SUKISU_STABLE=0                # 1=Use SUKISU SUSFS Stable branches    | 0=Use SUKISU SUSFS Development branches. | (Only works if ENABLE_SUKISU=1)
-# Setting Checkout hash ignores / disables SUKISU_STABLE
+ENABLE_SUKISU=1                # 1=Use SUKISU                           | 0=Skip
+SUKI_MANUAL_HOOKS=1
 # If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
 SUKI_CHECKOUT_HASH=""
 
@@ -599,7 +598,7 @@ Enable_KernelSU-Next() {
         if [[ "$KSU_NEXT_MANUAL_HOOKS" == "1" ]]; then
             log_section "Started Applying KernelSU-Next Manual Hook Patches "
             if ! cp KSUN_Manual-Hooks.diff KSUN_Manual-Hooks.patch; then
-                echo -e "${red}KSUN-Next manual hook patch not found in $KERNELDIR ! Aborting.${nocol}"
+                echo -e "${red}Manual hook patch not found in $KERNELDIR ! Aborting.${nocol}"
                 exit 1
             fi
             if patch -p1 --fuzz=3 < KSUN_Manual-Hooks.patch; then
@@ -607,16 +606,19 @@ Enable_KernelSU-Next() {
                 rm -f KSUN_Manual-Hooks.patch
                 echo -e "${blue}Disabling KSU_KPROBES_HOOK and other configs in defconfig .... …${nocol}"
                 ./scripts/config \
-                    --file arch/arm64/configs/gki_defconfig \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
                     --disable KSU_KPROBES_HOOK
                 if [[ "$PATCH_SUSFS" == "1" ]]; then
                     ./scripts/config \
-                        --file arch/arm64/configs/gki_defconfig \
+                        --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
                         --disable KSU_SUSFS_SUS_SU
                     ./scripts/config \
-                        --file arch/arm64/configs/gki_defconfig \
+                        --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
                         --disable KSU_SUSFS_ENABLE_LOG
                 fi
+            else
+                echo -e "${red}ERROR: KernelSU-Next Manual Hook Patch did not apply cleanly. Aborting.${nocol}"
+                exit 1
             fi
         fi
     fi
@@ -646,25 +648,13 @@ Enable_SUKISU-ultra() {
     cd $KERNELDIR
     if [[ "$ENABLE_SUKISU" == "1" ]]; then
         if [[ "$PATCH_SUSFS" == "1" ]]; then
-
-            if [[ "$SUKISU_STABLE" == "1" ]]; then
-                echo -e "${blue}Cloning SUKISU (SUSFS) Stable branch and setting it up .... …${nocol}"
-                curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-stable
-                if [[ -n "$SUKI_CHECKOUT_HASH" ]]; then
-                    echo -e "${blue}[SUKISU SUSFS Stable: Checkout hash set, Switching to detached head..] Checking out commit $SUKI_CHECKOUT_HASH…${nocol}"
-                    (cd KernelSU && git checkout "$SUKI_CHECKOUT_HASH") \
-                        || { echo -e "${red}[SUKISU_SUSFS_Stable:] Checkout $SUKI_CHECKOUT_HASH failed${nocol}"; exit 1; }
-                    cd "$KERNELDIR" || exit 1
-                fi
-            else
-                echo -e "${blue}Cloning SUKISU (SUSFS) Development branch and setting it up .... …${nocol}"
-                curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
-                if [[ -n "$SUKI_CHECKOUT_HASH" ]]; then
-                    echo -e "${blue}[SUKISU SUSFS: Checkout hash set, Switching to detached head..] Checking out commit $SUKI_CHECKOUT_HASH…${nocol}"
-                    (cd KernelSU && git checkout "$SUKI_CHECKOUT_HASH") \
-                        || { echo -e "${red}[SUKISU_SUSFS_Development:] Checkout $SUKI_CHECKOUT_HASH failed${nocol}"; exit 1; }
-                    cd "$KERNELDIR" || exit 1
-                fi
+            echo -e "${blue}Cloning SUKISU-Ultra (SUSFS) main branch and setting it up .... …${nocol}"
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+            if [[ -n "$SUKI_CHECKOUT_HASH" ]]; then
+                echo -e "${blue}[SUKISU SUSFS main: Checkout hash set, Switching to detached head..] Checking out commit $SUKI_CHECKOUT_HASH…${nocol}"
+                (cd KernelSU && git checkout "$SUKI_CHECKOUT_HASH") \
+                    || { echo -e "${red}[SUKISU_SUSFS_main:] Checkout $SUKI_CHECKOUT_HASH failed${nocol}"; exit 1; }
+                cd "$KERNELDIR" || exit 1
             fi
             echo -e "${green}SUKISU (SUSFS) framework clonning and setup done!.${nocol}"
             echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
@@ -690,6 +680,35 @@ Enable_SUKISU-ultra() {
                 --enable KPM
             if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
                 read -p "Breakpoint after Cloning SUKISU Detected! Press Enter to continue..."
+            fi
+        fi
+        if [[ "$SUKI_MANUAL_HOOKS" == "1" ]]; then
+            log_section "Started Applying SUKISU Manual Hook Patches "
+            if ! cp KSUN_Manual-Hooks.diff KSUN_Manual-Hooks.patch; then
+                echo -e "${red}Manual hook patch not found in $KERNELDIR ! Aborting.${nocol}"
+                exit 1
+            fi
+            if patch -p1 --fuzz=3 < KSUN_Manual-Hooks.patch; then
+                echo -e "${green}SUKISU Manual Hook Patch applied successfully.${nocol}"
+                rm -f KSUN_Manual-Hooks.patch
+                echo -e "${blue}Making necessary defconfig changes .... …${nocol}"
+                ./scripts/config \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                    --enable KSU_MANUAL_HOOK
+                ./scripts/config \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                    --disable KSU_DEBUG
+                if [[ "$PATCH_SUSFS" == "1" ]]; then
+                    ./scripts/config \
+                        --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                        --disable KSU_SUSFS_SUS_SU
+                    ./scripts/config \
+                        --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                        --disable KSU_SUSFS_ENABLE_LOG
+                fi
+            else
+                echo -e "${red}ERROR: SUKISU Manual Hook Patch did not apply cleanly. Aborting.${nocol}"
+                exit 1
             fi
         fi
     fi

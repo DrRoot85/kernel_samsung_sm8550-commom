@@ -40,6 +40,30 @@ choice
 	 on SMP and NUMA systems and exactly dividing by both PAL and
 	 NTSC frame rates for video and multimedia work.
 
+	config HZ_500
+		bool "500 HZ"
+	help
+	 500 Hz is a balanced timer frequency. Provides fast interactivity
+	 on desktops with great smoothness without increasing CPU power
+	 consumption and sacrificing the battery life on laptops.
+
+	config HZ_600
+		bool "600 HZ"
+	help
+	 600 Hz is an intermediate step between 500 Hz and 750 Hz, improving
+	 system responsiveness while keeping CPU overhead lower than 750 Hz or
+	 1000 Hz. It is a perfect match for 60Hz displays, as it allows
+	 exact frame synchronization at 10ms intervals. Additionally,
+	 it divides evenly into 120Hz (5ms), 240Hz (2.5ms), and 300Hz (2ms),
+	 making it well-suited for high-refresh-rate displays and gaming.
+
+	config HZ_750
+		bool "750 HZ"
+	help
+	 750 Hz is a good timer frequency for desktops. Provides fast
+	 interactivity with great smoothness without sacrificing too
+	 much throughput.
+
 	config HZ_1000
 		bool "1000 HZ"
 	help
@@ -53,6 +77,9 @@ config HZ
 	default 100 if HZ_100
 	default 250 if HZ_250
 	default 300 if HZ_300
+	default 500 if HZ_500
+	default 600 if HZ_600
+	default 750 if HZ_750
 	default 1000 if HZ_1000
 
 config SCHED_HRTICK
