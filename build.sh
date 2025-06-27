@@ -32,13 +32,22 @@ echo -e " $yellow #####|       top of the script to enable KernelSU patches   |#
 KERNEL_DEFCONFIG=kalama-dm3q_defconfig  # Looks for defconfig in arch/<exported_arch>/configs/
 ANYKERNEL3_DIR=$PWD/AnyKernel3/ # Required by the function zip_kernel
 CLANG_VERSION=clang-r547379
-CLANG_DIR="/home/akm/Git/Clang/$CLANG_VERSION"
+CLANG_DIR="$HOME/Git/Clang/$CLANG_VERSION"
 CLANG_BINARY="$CLANG_DIR/bin/clang"
 CC_CLANG=clang
 export ARCH=arm64
 export SUBARCH=ARM64
 export PATH="$CLANG_DIR/bin:$PATH"
 export KBUILD_COMPILER_STRING="$($CLANG_BINARY --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
+
+# An array that stores all make command, edit it as required. These options will be used throughout the script
+MAKE_FLAGS=( \
+  O=out \
+  CC="$CC_CLANG" \
+  LD=ld.lld \
+  LLVM=1 \
+  LLVM_IAS=1 \
+)
 
 # ---------------------------------------| Function options |------------------------------------------------------------------------ #
 
@@ -285,25 +294,23 @@ build_kernel() {
     echo "       NOW MAKING _defconfig : $KERNEL_DEFCONFIG        "
     echo -e "***********************************************$nocol"
     #make O=out CC="$CC_CLANG" $KERNEL_DEFCONFIG
-    make O=out \
-        CC="$CC_CLANG" \
-        LD=ld.lld \
-        LLVM=1 \
-        LLVM_IAS=1 \
-        $KERNEL_DEFCONFIG \
-        -j$(nproc) 2>&1 | tee build.log
+    make \
+        "${MAKE_FLAGS[@]}" \
+        "$KERNEL_DEFCONFIG" \
+        "-j$(nproc)" \
+        2>&1 | tee build.log
+    echo #blank line
 
     #------------------------Kernel Stuff-------------------------------------
     echo -e "$blue***********************************************"
     echo "         NOW COMPILING KERNEL!                  "
     echo -e "***********************************************$nocol"
 
-    make O=out \
-        CC="$CC_CLANG" \
-        LD=ld.lld \
-        LLVM=1 \
-        LLVM_IAS=1 \
-        -j$(nproc) 2>&1 | tee build.log
+    make \
+        "${MAKE_FLAGS[@]}" \
+        "-j$(nproc)" \
+        2>&1 | tee -a build.log   # append to the same log
+    echo #blank line
 
     #---------------------------Build Summary------------------------------------
     BUILD_MID=$(date +"%s")
@@ -334,6 +341,7 @@ build_modules() {
         break
     done
     echo -e "Final Module name is set to $MODULES_NAME"
+    echo # Blank line
     #------------- Name verification ends --------------#
     cd "$KERNELDIR"
     # Build modules if selected by the user
@@ -371,45 +379,47 @@ build_modules() {
             echo -e "$blue***********************************************"
             echo "       NOW MAKING _defconfig : $KERNEL_DEFCONFIG        "
             echo -e "***********************************************$nocol"
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                $KERNEL_DEFCONFIG \
-                -j$(nproc) 2>&1 | tee build.log
+            make \
+                "${MAKE_FLAGS[@]}" \
+                "$KERNEL_DEFCONFIG" \
+                "-j$(nproc)" \
+                2>&1 | tee -a build.log
+            echo #blank line
             echo -e "$yellow**** Preparing Modules ****$nocol"
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                modules_prepare || {
-                echo "Error preparing modules"
-                exit 1
+            make \
+                "${MAKE_FLAGS[@]}" \
+                modules_prepare \
+                "-j$(nproc)" \
+                INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                2>&1 | tee -a build.log || {
+                    echo "Error preparing modules"
+                    exit 1
             }
+            echo #blank line
 
             echo -e "$yellow**** Building Modules ****$nocol"
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                modules INSTALL_MOD_PATH="$KERNELDIR"/out/modules || {
-                echo "Error building modules"
-                exit 1
+            make \
+                "${MAKE_FLAGS[@]}" \
+                modules \
+                INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                "-j$(nproc)" \
+                2>&1 | tee -a build.log || {
+                    echo "Error building modules"
+                    exit 1
             }
+            echo #blank line
             echo -e "$yellow**** Installing Modules ****$nocol"
 
-            make O=out \
-                CC="$CC_CLANG" \
-                LD=ld.lld \
-                LLVM=1 \
-                LLVM_IAS=1 \
-                modules_install INSTALL_MOD_PATH="$KERNELDIR"/out/modules || {
-                echo "Error installing modules"
-                exit 1
+            make \
+                "${MAKE_FLAGS[@]}" \
+                modules_install \
+                INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                "-j$(nproc)" \
+                 2>&1 | tee -a build.log || {
+                    echo "Error installing modules"
+                    exit 1
             }
+            echo #blank line
         fi
 
         echo -e "$blue***********************************************"

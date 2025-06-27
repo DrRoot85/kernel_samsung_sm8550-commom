@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=A kernel for S23 QCOM Series by edgarscirulis @ xda-developers
+kernel.string=Full CLO rebase kernel for S23 Ultra
 do.devicecheck=0
 do.modules=0
 do.systemless=1
