@@ -121,6 +121,8 @@ static void show_free_initmem_done(struct work_struct *work)
  *   – The name must match what userspace uses in insmod (MODULE_NAME without “.ko”).
  */
 static const __initconst char * const targets_list[] = {
+	"sched_walt",
+	"qcom_cpufreq_hw",
 	NULL
 };
 
