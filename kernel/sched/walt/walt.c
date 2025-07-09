@@ -5238,7 +5238,6 @@ MODULE_LICENSE("GPL v2");
 MODULE_SOFTDEP("pre: sched-walt-debug");
 #endif
 
-#if IS_ENABLED(CONFIG_SEC_QC_SUMMARY)
 #include <linux/samsung/debug/qcom/sec_qc_summary.h>
 
 void sec_qc_summary_set_sched_walt_info(struct sec_qc_summary_data_apss *apss)
@@ -5247,4 +5246,3 @@ void sec_qc_summary_set_sched_walt_info(struct sec_qc_summary_data_apss *apss)
 	apss->aplpm.p_cluster = virt_to_phys(sched_cluster);
 }
 EXPORT_SYMBOL(sec_qc_summary_set_sched_walt_info);
-#endif
