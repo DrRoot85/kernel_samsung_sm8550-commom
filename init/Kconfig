@@ -2084,6 +2084,24 @@ config MODULE_SIG_FORMAT
 	def_bool n
 	select SYSTEM_DATA_VERIFICATION
 
+menuconfig LAZY_INITCALL
+	bool "Lazy built-in module initialization"
+	depends on MODULES
+	help
+      Android has moved toward a split kernel model (GKI) that assumes
+      most drivers build as modules.  When you instead build everything
+      into a monolithic kernel (CONFIG_MODULES=y), some components may
+      initialize too early or not at all.
+
+      Enabling this defers the initcall of listed built‑in drivers until
+      userspace performs an insmod of a module with the matching name.
+      That way, drivers fire exactly when Android expects them to.
+
+      This is based on Arter97’s late_initcall hack, but adapted to
+      coexist with CONFIG_MODULES=y by hijacking the module loading
+      sequence in module.c.  See the comments in kernel/module.c for
+      setup and maintenance instructions.
+
 menuconfig MODULES
 	bool "Enable loadable module support"
 	modules

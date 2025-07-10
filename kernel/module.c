@@ -74,6 +74,44 @@
 #define ARCH_SHF_SMALL 0
 #endif
 
+#ifdef CONFIG_LAZY_INITCALL
+static DEFINE_MUTEX(lazy_initcall_mutex);
+static bool completed;
+
+/*
+ * ---------------------------------------------------------------------------
+ * Lazy‑Initcall Mechanism
+ *
+ * Built‑in drivers whose names appear in targets_list[] are not initialized
+ * at the normal initcall phase. Instead, their init functions are deferred
+ * until userspace performs an insmod of a module with the same name.
+ *
+ * Workflow:
+ *   1. During compile‑time initcall registration, each built‑in driver’s
+ *      wrapper calls add_lazy_initcall(). If its modname is in targets_list[],
+ *      the real initcall is recorded and skipped.
+ *   2. When userspace does insmod <modname>.ko, our load_module hook checks
+ *      lazy_initcalls[]. If a match is found, it invokes the stored initcall
+ *      instead of loading a module.
+ *   3. Once all deferred initcalls have run, `completed` is set, and the
+ *      normal free_initmem()/mark_readonly() reclaim init memory.
+ * ---------------------------------------------------------------------------
+ */
+
+/*
+ * List of built‑in driver “modname” strings to defer:
+ *   – If your driver’s module file is sched_walt.ko, add "sched_walt" here.
+ *   – The name must match what userspace uses in insmod (MODULE_NAME without “.ko”).
+ */
+static const __initconst char * const targets_list[] = {
+	NULL
+};
+
+static struct lazy_initcall __initdata lazy_initcalls[ARRAY_SIZE(targets_list)];
+static int __initdata counter;
+#endif
+
+
 /*
  * Modules' sections will be aligned on page boundaries
  * to ensure complete separation of code and data, but
@@ -4098,11 +4136,99 @@ static void cfi_init(struct module *mod);
  * Allocate and load the module: note that size of section 0 is always
  * zero, and we rely on this for optional sections.
  */
+
+#ifdef CONFIG_LAZY_INITCALL
+bool __init add_lazy_initcall(initcall_t fn, char modname[], char filename[])
+{
+// Code borrowed from arter97's lazy_initcall
+	int i;
+	bool match = false;
+
+	for (i = 0; targets_list[i]; i++) {
+		if (!strcmp(targets_list[i], modname)) {
+			match = true;
+			break;
+		}
+	}
+
+	if (!match)
+		return false;
+
+	mutex_lock(&lazy_initcall_mutex);
+
+	pr_info("adding lazy_initcalls[%d] from %s - %s\n",
+				counter, modname, filename);
+
+	lazy_initcalls[counter].fn = fn;
+	lazy_initcalls[counter].modname = modname;
+	lazy_initcalls[counter].filename = filename;
+	counter++;
+
+	mutex_unlock(&lazy_initcall_mutex);
+
+	return true;
+}
+
+
+static noinline int __init __lazy_load_module(struct load_info *info,
+                                              const char __user *uargs,
+                                              int flags)
+{
+    int i, j, ret;
+    bool any_left;
+    initcall_t fn;
+
+    /* 1) If we’ve already completed all deferred inits, skip this path */
+    if (completed)
+        return -ENOENT;   /* let the normal loader handle it */
+
+    /* 2) Look up in our deferred list */
+    for (i = 0; i < counter; i++) {
+        if (!strcmp(lazy_initcalls[i].modname, info->name)) {
+            fn = lazy_initcalls[i].fn;
+
+            /* Already loaded? Error out */
+            if (lazy_initcalls[i].loaded) {
+                pr_debug("lazy_initcalls[%d]: %s already loaded\n",
+                         i, info->name);
+                return -EBUSY;
+            }
+
+            /*  Mark it loaded and invoke its init() */
+            lazy_initcalls[i].loaded = true;
+            ret = fn();
+            pr_info("lazy_initcalls[%d]: %s built-in driver's init returned %d\n",
+                    i, info->name, ret);
+
+            /*  Check if this was the last one */
+            any_left = false;
+            for (j = 0; j < counter; j++) {
+                if (!lazy_initcalls[j].loaded) {
+                    any_left = true;
+                    break;
+                }
+            }
+            if (!any_left)
+                WRITE_ONCE(completed, true);
+
+            return ret < 0 ? ret : 0;
+        }
+    }
+
+    /* 4) Not in targets_list[] → fall back */
+    return -ENOENT;
+}
+#endif /* CONFIG_LAZY_INITCALL */
+
+
 static int load_module(struct load_info *info, const char __user *uargs,
 		       int flags)
 {
 	struct module *mod;
 	long err = 0;
+#ifdef CONFIG_LAZY_INITCALL
+	int ret; 
+#endif
 	char *after_dashes;
 #ifdef CONFIG_RKP
 	struct module_info rkp_mod_info;
@@ -4139,6 +4265,28 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	err = setup_load_info(info, flags);
 	if (err)
 		goto free_copy;
+
+   /* Try lazy‐initcall first, if enabled. Hijack module loading sequence */
+#ifdef CONFIG_LAZY_INITCALL
+    /* If we haven’t yet finished all deferred inits, try the lazy path */
+    if (!completed) {
+        mutex_lock(&lazy_initcall_mutex);
+        smp_wmb();
+        ret = __lazy_load_module(info, uargs, flags);
+        if (ret != -ENOENT) {
+            mutex_unlock(&lazy_initcall_mutex);
+            err = ret;
+            goto free_copy;
+        }
+        /* If that was the last deferred init, reclaim initmem now */
+        if (completed) {
+            pr_info("all lazy modules done; freeing initmem\n");
+            free_initmem();
+            mark_readonly();
+        }
+        mutex_unlock(&lazy_initcall_mutex);
+    }
+#endif
 
 	/*
 	 * Now that we know we have the correct module name, check
