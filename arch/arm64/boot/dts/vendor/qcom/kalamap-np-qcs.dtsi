@@ -1,0 +1,7 @@
+#include "kalamap-qcs.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. KalamaP NP SoC";
+	compatible = "qcom,kalamap";
+	qcom,msm-id = <668 0x20000>;
+};
