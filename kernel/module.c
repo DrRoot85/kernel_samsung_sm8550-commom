@@ -78,6 +78,23 @@
 static DEFINE_MUTEX(lazy_initcall_mutex);
 static bool completed;
 
+#ifdef CONFIG_LAZY_INITCALL_DEBUG
+#include <linux/workqueue.h>
+
+static void show_free_initmem_done(struct work_struct *work);
+
+static DECLARE_DELAYED_WORK(debug_free_initmem_work,
+                           show_free_initmem_done);
+
+static bool debug_work_started;
+
+static void show_free_initmem_done(struct work_struct *work)
+{
+    pr_info("lazy-initcall: all lazy modules loaded; initmem freed\n");
+    schedule_delayed_work(&debug_free_initmem_work, 5 * HZ);
+}
+#endif /* CONFIG_LAZY_INITCALL_DEBUG */
+
 /*
  * ---------------------------------------------------------------------------
  * Lazy‑Initcall Mechanism
@@ -109,7 +126,7 @@ static const __initconst char * const targets_list[] = {
 
 static struct lazy_initcall __initdata lazy_initcalls[ARRAY_SIZE(targets_list)];
 static int __initdata counter;
-#endif
+#endif //*CONFIG_LAZY_INITCALL*//
 
 
 /*
@@ -4286,6 +4303,12 @@ static int load_module(struct load_info *info, const char __user *uargs,
         }
         mutex_unlock(&lazy_initcall_mutex);
     }
+#ifdef CONFIG_LAZY_INITCALL_DEBUG
+  	if (completed && !debug_work_started) {
+    	schedule_delayed_work(&debug_free_initmem_work, 5 * HZ);
+    	debug_work_started = true;
+  	}
+#endif
 #endif
 
 	/*

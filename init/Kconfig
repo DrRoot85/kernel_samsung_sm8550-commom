@@ -2102,6 +2102,24 @@ menuconfig LAZY_INITCALL
       sequence in module.c.  See the comments in kernel/module.c for
       setup and maintenance instructions.
 
+if LAZY_INITCALL
+
+config LAZY_INITCALL_DEBUG
+	bool "Enable lazy initcall debug (dmesg heartbeat)"
+	help
+	  Emit a repeating heartbeat in dmesg every 5 seconds after all
+	  deferred initcalls have run and free_initmem()/mark_readonly()
+	  have completed.  Each line reads:
+	  lazy-initcall: all lazy modules loaded; initmem freed
+	  If you do *not* see this spam, it means the “completed” logic in
+	  module.c never fired and __init memory was *not* reclaimed.
+
+	  Only enable this during bring‑up or test builds.  Disable
+	  for production / stable builds to avoid continuous log spam and
+	  extra runtime overhead.
+
+endif
+
 menuconfig MODULES
 	bool "Enable loadable module support"
 	modules
