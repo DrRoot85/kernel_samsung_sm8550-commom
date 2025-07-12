@@ -229,7 +229,7 @@ static void waltgov_deferred_update(struct waltgov_policy *wg_policy, u64 time,
 }
 
 #if IS_ENABLED(CONFIG_SCHED_POWER_OPTIMIZE)
-#define TARGET_LOAD_PL 90
+#define TARGET_LOAD_PL 95
 #endif
 
 #define TARGET_LOAD 80
