@@ -31,6 +31,9 @@ echo -e " $yellow #####|       top of the script to enable KernelSU patches   |#
 # ---------------------------| EXPORTS and Directory Setup |------------------------------------------------------ #
 KERNEL_DEFCONFIG=gki_defconfig  # Looks for defconfig in arch/<exported_arch>/configs/
 ANYKERNEL3_DIR=$PWD/AnyKernel3/ # Required by the function zip_kernel
+AK3_REPO="https://github.com/akm-04/AnyKernel3.git"
+AK3_BRANCH="dm3q"
+MODULES_NAME="Kernel_Modules-Magisk"
 CLANG_VERSION=clang-r547379
 CLANG_DIR="$HOME/Git/Clang/$CLANG_VERSION"
 CLANG_BINARY="$CLANG_DIR/bin/clang"
@@ -167,7 +170,9 @@ error_handler() {
 clone() {
     log_section "Clone Function Start"
     if ! [ -d "$CLANG_DIR" ]; then
-        echo -e "${red}Clang not found! Cloning...${nocol}"
+        echo -e "${yellow}⚠️  Clang directory not found:${nocol} $CLANG_DIR"
+        read -p "Press ENTER to clone to this path, or Ctrl+C to abort and edit the script to configure correct cloning directory: "
+        echo -e "${red}Cloning clang at $CLANG_DIR ...${nocol}"
         mkdir -p "$CLANG_DIR"
 
         if ! wget --show-progress -O "$CLANG_DIR/${CLANG_VERSION}.tar.gz" "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/${CLANG_VERSION}.tar.gz"; then
@@ -226,7 +231,15 @@ zip_kernel() {
     ls $PWD/out/arch/arm64/boot/$ARTIFACT
 
     echo -e "$yellow**** Verifying AnyKernel3 Directory ****$nocol"
-    ls $ANYKERNEL3_DIR
+
+    if [ ! -d "$ANYKERNEL3_DIR" ]; then
+        echo -e "${blue}|| AnyKernel3 not found, cloning branch '$AK3_BRANCH'…${nocol}"
+        if ! git clone --depth 1 --branch "$AK3_BRANCH" "$AK3_REPO" "$ANYKERNEL3_DIR"; then
+            echo -e "${red}❌ Failed to clone AnyKernel3 from $AK3_REPO (branch $AK3_BRANCH). Aborting.${nocol}"
+            exit 1
+        fi
+        echo -e "${green}✅ Cloned AnyKernel3 ($AK3_BRANCH) into $ANYKERNEL3_DIR${nocol}"
+    fi
 
     echo -e "$yellow**** Removing leftovers from anykernel3 folder ****$nocol"
     rm -rf "$ANYKERNEL3_DIR/$ARTIFACT"
@@ -320,29 +333,9 @@ build_kernel() {
 
 
 build_modules() {
-    #------------- Name verification starts -------------#
     log_section "Building Modules Now"
-    MODULES_NAME=""
-    while true; do
-        read -rp "Enter final Module zip name (format: <Module_name>.zip): " MODULES_NAME
-        # Strip all whitespace and stray CR
-        MODULES_NAME="${MODULES_NAME//[[:space:]]/}"
-        MODULES_NAME="${MODULES_NAME//$'\r'/}"
-        # 1) Reject truly empty input
-        if [[ -z "$MODULES_NAME" ]]; then
-            echo -e "${yellow}Input cannot be empty.${nocol}"
-            continue
-        fi
-        # 2) Append .zip only once
-        if [[ "$MODULES_NAME" != *.zip ]]; then
-            MODULES_NAME="${MODULES_NAME}.zip"
-        fi
-        # Now we have a valid, non-empty name (with .zip)
-        break
-    done
     echo -e "Final Module name is set to $MODULES_NAME"
     echo # Blank line
-    #------------- Name verification ends --------------#
     cd "$KERNELDIR"
     # Build modules if selected by the user
     if [[ "$BUILD_MODULES" == "y" ]]; then
@@ -391,6 +384,7 @@ build_modules() {
                 modules_prepare \
                 "-j$(nproc)" \
                 INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                DEPMOD=depmod \
                 2>&1 | tee -a build.log || {
                     echo "Error preparing modules"
                     exit 1
@@ -402,6 +396,7 @@ build_modules() {
                 "${MAKE_FLAGS[@]}" \
                 modules \
                 INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                DEPMOD=depmod \
                 "-j$(nproc)" \
                 2>&1 | tee -a build.log || {
                     echo "Error building modules"
@@ -414,11 +409,17 @@ build_modules() {
                 "${MAKE_FLAGS[@]}" \
                 modules_install \
                 INSTALL_MOD_PATH="$KERNELDIR/out/modules" \
+                DEPMOD=depmod \
                 "-j$(nproc)" \
                  2>&1 | tee -a build.log || {
                     echo "Error installing modules"
                     exit 1
             }
+            modules_src_dir=$(echo "out/modules/lib/modules"/*)
+            KVER=$(basename "$modules_src_dir")
+            echo "Detected kernel version: $KVER"
+            depmod -b "$KERNELDIR/out/modules" "$KVER"  \
+                2>&1 | tee -a build.log
             echo #blank line
         fi
 
