@@ -164,3 +164,8 @@ sphinx_*/
 
 # Object directory
 out/
+build.log
+Mod/
+NetErnel_modules/
+AnyKernel3/
+KernelSU/
