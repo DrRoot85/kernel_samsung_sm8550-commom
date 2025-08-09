@@ -3667,7 +3667,19 @@ static char *custom_module_blacklist[] = {
 #if IS_BUILTIN(CONFIG_ZSMALLOC)
     "zsmalloc",
 #endif
+    /* Performance / Input Management */
     "input_booster_lkm",
+
+    /* Boot / Logging / Debugging */
+    "boot_stats", "f_fs_ipc_log", "ehset", "rdbg",
+    "stm_console", "stm_core", "stm_ftrace", "stm_p_basic", "stm_p_ost",
+
+    /* Qualcomm Debug Modules */
+    "qcom_edac", "qcom_cpufreq_hw_debug", "qcom_iommu_debug", "qti_battery_debug",
+
+    /* Qualcomm CROW SoC Subsystem Modules */
+    "gpucc_crow", "camcc_crow", "videocc_crow", "debugcc_crow",
+    "qnoc_crow", "dispcc_crow", "pinctrl_crow", "gcc_crow",
 };
 
 static bool blacklisted(const char *module_name)
