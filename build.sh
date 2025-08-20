@@ -17,7 +17,8 @@ echo -e " $yellow #####| To use specific AOSP clang version, edit this script |#
 echo -e " $yellow #####|   and specify correct clang version and install dir  |#####$nocol "
 echo -e " $yellow #####|   Configure PATCH_SUSFS, ENABLE_KSU[_NEXT], etc. at  |########$nocol "
 echo -e " $yellow #####|       top of the script to enable KernelSU patches   |######### $nocol"
-
+echo  # Blank line
+echo  # Blank line
 
 # -------------------------------- | Dependencies |--------------------------------------------------------------#
 # Uncomment Next 4 lines to install all necessary dependencies for kernel Compiling.
@@ -25,7 +26,7 @@ echo -e " $yellow #####|       top of the script to enable KernelSU patches   |#
 #sudo apt-get update && sudo apt-get install -y \
 #  build-essential libncurses-dev bison flex libssl-dev libelf-dev bc \
 #  dwarves fakeroot git clang llvm lld lldb \
-#  gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-arm-linux-gnueabi
+#  gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-arm-linux-gnueabi patch
 
 # ---------------------------------------------------------------------------------------------------------------- #
 # ---------------------------| EXPORTS and Directory Setup |------------------------------------------------------ #
@@ -34,59 +35,261 @@ ANYKERNEL3_DIR=$PWD/AnyKernel3/ # Required by the function zip_kernel
 AK3_REPO="https://github.com/akm-04/AnyKernel3.git"
 AK3_BRANCH="dm3q"
 MODULES_NAME="Kernel_Modules-Magisk"
+
+
+# Setup the main directory where build tools are located / will be cloned
+# Directory structure under $TOOLCHAIN_DIR:
+#
+# $TOOLCHAIN_DIR/
+# ├── clang-<version>/       # e.g. clang-r547379
+# │   └── bin/
+# │       └── clang
+# ├── gas/
+# │   └── linux-x86/          # prebuilt GNU assembler
+# └── build-tools/
+#     └── path/
+#         └── linux-x86/      # Android SDK build-tools
+#
+TOOLCHAIN_DIR="$HOME/Git/Clang"
+
+# Clang version Setup
 CLANG_VERSION=clang-r547379
-CLANG_DIR="$HOME/Git/Clang/$CLANG_VERSION"
+CLANG_DIR="$TOOLCHAIN_DIR/$CLANG_VERSION"
 CLANG_BINARY="$CLANG_DIR/bin/clang"
-CC_CLANG=clang
-export ARCH=arm64
-export SUBARCH=ARM64
-export PATH="$CLANG_DIR/bin:$PATH"
-export KBUILD_COMPILER_STRING="$($CLANG_BINARY --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
 
 # An array that stores all make command, edit it as required. These options will be used throughout the script
 MAKE_FLAGS=( \
   O=out \
-  CC="$CC_CLANG" \
+  CC=clang \
   LD=ld.lld \
   LLVM=1 \
   LLVM_IAS=1 \
 )
 
-# ---------------------------------------| Function options |------------------------------------------------------------------------ #
+# ---------------------------------------------------------------------------- #
+#                                Function Options                              #
+# ---------------------------------------------------------------------------- #
 
-ARTIFACT="Image.gz"            # Variable to hold the name of the final kernel artifact. Change as required.
-BUILD_MODULES="n"              # "y" = Enabled | "n" = Disabled
-ENABLE_BREAKPOINTS=0           # Enabled all breakpoints in the script to interrupt after specific steps to maybe apply a manual patch.
-# -----------------------------------------------------------------------------------------
-PATCH_SUSFS=1                  # 1=Apply SUSFS patch from simonpunk repo     | 0=skip
-SUSFS_CHECKOUT_HASH=""         # If non‐empty, SUSFS_Patch will checkout this commit after cloning.
-#SUSFS_CHECKOUT_HASH="eeb4737559da1321d0f121f1b3aa75ae9567075a"  # As an example, uncomment this to Checkout to SUSFS v1.5.5.
-# ------------------------------------------------------------------------------------------------------------------------------------ #
+ARTIFACT="Image.gz"      # Final kernel artifact filename
+BUILD_MODULES="n"        # Build modules? (y = yes, n = no)
+ENABLE_BREAKPOINTS=0     # Enable script breakpoints for manual steps verification (1 = on, 0 = off)
 
+# ---------------------------------------------------------------------------- #
+#                                 SUSFS Patch                                  #
+# ---------------------------------------------------------------------------- #
 
-# ---------------------- | Enable either KernelSU or KernelSU-Next or SUKISU, DO NOT ENABLE BOTH OR ALL! | ----------------------------#
+PATCH_SUSFS=1            # Apply SUSFS patch? (1 = yes, 0 = no)
+SUSFS_CHECKOUT_HASH=""   # Specific commit SHA after cloning (empty = latest)
 
-# ====================================== # | KernelSU-Next Options
-ENABLE_KSU_NEXT=0              # 1=Use KernelSU-Next                    | 0=Skip
-KSU_NEXT_STABLE=1         # 1=Use KernelSU-Next stable branches    | 0=Use KernelSU-Next Development branches. | (Only works if ENABLE_KSU_NEXT=1)
-KSU_NEXT_MANUAL_HOOKS=1        # 1=Use Manual Hooks instead of using kprobes         | 0=Use Kprobes Hooks (default)
-# Setting Checkout hash ignores / disables KSU_NEXT_STABLE
-# If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
-KSUN_CHECKOUT_HASH=""
-#KSUN_CHECKOUT_HASH="c6d8160611d5fa57425924ac956ba865252e4040"  # Tested and confirmed manual hooks works with susfs 1.5.7
-# If you get compilation error compiling ksu-next_susfs 1.5.7, have a look: https://github.com/KernelSU-Next/KernelSU-Next/issues/426
-# -----------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------- #
+#                   KernelSU-Next  |  SUKISU  |  KernelSU                      #
+#                (Enable **only one** of the following options)                #
+#             Either Enable KernelSU or KernelSU-Next or SukiSU-Ultra.         #
+# ---------------------------------------------------------------------------- #
 
-# ====================================== # | SUKISU-Ultra Options
-ENABLE_SUKISU=1                # 1=Use SUKISU                           | 0=Skip
-SUKI_MANUAL_HOOKS=1
-# If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
-SUKI_CHECKOUT_HASH=""
+## KernelSU-Next Options
+ENABLE_KSU_NEXT=0        # Use KernelSU-Next? (1 = yes, 0 = no)
+KSU_NEXT_STABLE=1        # Select stable branch? (1 = stable, 0 = dev)
+KSU_NEXT_MANUAL_HOOKS=1  # Hooks style (1 = manual, 0 = kprobes)
+KSUN_CHECKOUT_HASH=""    # Specific KernelSU-Next commit SHA
 
-# ====================================== # | KernelSU Options
-ENABLE_KSU=0                   # 1=Use KernelSU                         | 0=Skip. | (Auto applies KernelSU SUSFS patches if PATCH_SUSFS=1)
-# If set, script will checkout this specific commit SHA, resulting in a detached HEAD regardless of branch selected.
-KSU_CHECKOUT_HASH=""
+## SUKISU-Ultra Options
+ENABLE_SUKISU=1          # Use SUKISU-Ultra? (1 = yes, 0 = no)
+SUKI_MANUAL_HOOKS=0      # Manual Hooks for SUKISU (SUSFS version only) (1 = manual, 0 = default)
+SUKI_TRACEPOINTS_HOOK=1  # Use tracepoint hook for Sukisu-Ultra (for SUSFS and Normal ver) (1 = enable, 0 = disabled)
+SUKI_CHECKOUT_HASH=""    # Specific SUKISU commit SHA
+PATCH_KPM=1              # Patches the kernel binary after its done compiling.
+
+## KernelSU Options     | Note KernelSU-Next removed SUSFS support from their branch
+ENABLE_KSU=0             # Use original KernelSU? (1 = yes, 0 = no)
+KSU_CHECKOUT_HASH=""     # Specific KernelSU commit SHA
+
+# --------------------- Variable verification and corrections -------------------------------------#
+
+# --- ensure only one KernelSU variant is enabled ---
+count=0
+enabled_list=""
+
+if [[ "$ENABLE_KSU" == "1" ]]; then
+    count=$((count + 1))
+    enabled_list="${enabled_list}KernelSU, "
+fi
+
+if [[ "$ENABLE_SUKISU" == "1" ]]; then
+    count=$((count + 1))
+    enabled_list="${enabled_list}SUKISU, "
+fi
+
+if [[ "$ENABLE_KSU_NEXT" == "1" ]]; then
+    count=$((count + 1))
+    enabled_list="${enabled_list}KernelSU-Next, "
+fi
+
+if [[ $count -gt 1 ]]; then
+    # trim trailing ", "
+    enabled_list=${enabled_list%??}
+    echo -e "${red}Error:${nocol} Only one KernelSU variant may be enabled. You enabled: ${yellow}${enabled_list}${nocol}" >&2
+    exit 1
+fi
+
+# ------------- ensure all assigned values are either 1 or 0 ---
+
+if [[ "$ENABLE_KSU_NEXT" != "1" && "$ENABLE_KSU_NEXT" != "0" ]]; then
+    echo -e "${yellow}Invalid ENABLE_KSU_NEXT variable value; defaulting to 0${nocol}" >&2
+    ENABLE_KSU_NEXT=0
+fi
+
+if [[ "$ENABLE_SUKISU" != "1" && "$ENABLE_SUKISU" != "0" ]]; then
+    echo -e "${yellow}Invalid ENABLE_SUKISU variable value; defaulting to 0${nocol}" >&2
+    ENABLE_SUKISU=0
+fi
+
+if [[ "$ENABLE_KSU" != "1" && "$ENABLE_KSU" != "0" ]]; then
+    echo -e "${yellow}Invalid ENABLE_KSU variable value; defaulting to 0${nocol}" >&2
+    ENABLE_KSU=0
+fi
+
+if [[ "$PATCH_SUSFS" != "1" && "$PATCH_SUSFS" != "0" ]]; then
+    echo -e "${yellow}Invalid PATCH_SUSFS variable value; defaulting to 0${nocol}" >&2
+    PATCH_SUSFS=0
+fi
+
+# KernelSU-Next removed SUSFS branches, so if using KernelSU-Next do not apply susfs patches
+if [[ "$ENABLE_KSU_NEXT" == "1" ]]; then
+    PATCH_SUSFS=0
+fi
+
+# If sukisu is not enabled, do not run KPM kernel binary patches
+if [[ "$ENABLE_SUKISU" == "0" ]]; then
+    PATCH_KPM=0
+fi
+
+# Only one type of Hook variant maybe selected
+if [[ "$SUKI_MANUAL_HOOKS" == "1" && "$SUKI_TRACEPOINTS_HOOK" == "1" ]]; then
+    echo -e "${red}Error:${nocol} Only one type of SUKISU Hook variant may be applied! You enabled both SUKISU Manual Hook and Tracepoint Hook."
+    exit 1
+fi
+# SUKISU normal version without susfs does not support manual hooks
+if [[ "$ENABLE_SUKISU" == "1" && "$PATCH_SUSFS" == "0" ]]; then
+    if [[ "$SUKI_MANUAL_HOOKS" == "1" ]]; then
+        echo -e "${blue}Note:${nocol} SUKISU normal (no SUSFS) does not support manual hooks — disabling SUKI_MANUAL_HOOKS."
+        SUKI_MANUAL_HOOKS=0
+    fi
+fi
+# If no KSU variant is enabled, never apply SUSFS
+if [[ "$ENABLE_KSU_NEXT" == "0" && "$ENABLE_SUKISU" == "0" && "$ENABLE_KSU" == "0" ]]; then
+    PATCH_SUSFS=0
+fi
+
+# -------------------------------------- Cloning Functions and setup enviroment ------------------------------------------------------#
+
+# Toybox patch from build-tools gives issues when applying patches with fuzz.
+# So force user debian patch binary
+patch() {
+#   Replace the path with your patch binary path | find path by running "which patch" in terminal.
+#   $ which patch
+#   /usr/bin/patch
+
+    /usr/bin/patch "$@"
+}
+export -f patch
+
+setup_env(){
+    log_section "Setup Environment"
+
+    # Ensure all toolchains are present
+    clone_clang
+    #clone_build_tools
+    #clone_gas
+
+    # Now export paths and variables
+    #export PATH=$TOOLCHAIN_DIR/build-tools/path/linux-x86:$PATH
+    #export PATH=$TOOLCHAIN_DIR/gas/linux-x86:$PATH
+    export PATH="$CLANG_DIR/bin:$PATH"
+    export KBUILD_COMPILER_STRING="$($CLANG_BINARY --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
+
+    export ARCH=arm64
+    export SUBARCH=ARM64
+    export CROSS_COMPILE=aarch64-linux-gnu-
+    export CLANG_TRIPLE=aarch64-linux-gnu-
+    export CC="$CLANG_DIR/bin/clang"
+    export TARGET_SOC=kalama
+    export LD=ld.lld
+    export LLVM=1
+    export LLVM_IAS=1
+
+    echo -e "${green}Environment set up done!${nocol}"
+}
+
+clone_clang() {
+    log_section "Cloning Clang Function Start"
+    if ! [ -d "$CLANG_DIR" ]; then
+        echo -e "${yellow}⚠️  Clang directory not found:${nocol} $CLANG_DIR"
+        read -p "Press ENTER to clone to this path, or Ctrl+C to abort and edit the script to configure correct cloning directory: "
+        echo -e "${red}Cloning clang at $CLANG_DIR ...${nocol}"
+        mkdir -p "$CLANG_DIR"
+# ----------------------------------------------------
+# Link for cloning clang 20+
+        if ! wget --show-progress -O "$CLANG_DIR/${CLANG_VERSION}.tar.gz" "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/${CLANG_VERSION}.tar.gz"; then
+            echo "${red}Cloning failed! Aborting...${nocol}"
+            exit 1
+        fi
+# ------------------------------------------------------------------------------
+# Available clangs on this link 
+# clang-3289846/ clang-r399163b/ clang-r416183b/ clang-r416183b1/ clang-r416183c/ clang-r416183c1/ clang-r428724/ clang-r433403/
+#        if ! wget --show-progress -O "$CLANG_DIR/${CLANG_VERSION}.tar.gz" "https://android.googlesource.com/platform//prebuilts/clang/host/linux-x86/+archive/1c1069109f294e9ffbdc1ff8541394ab4b5d941d/${CLANG_VERSION}.tar.gz"; then
+#            echo "${red}Cloning failed! Aborting...${nocol}"
+#            exit 1
+#        fi
+# ------------------------------------------------------
+        echo "${yellow}Cloning successful. Extracting the tar file...${nocol}"
+        tar -xzf "$CLANG_DIR/${CLANG_VERSION}.tar.gz" -C "$CLANG_DIR"
+        rm "$CLANG_DIR/${CLANG_VERSION}.tar.gz"
+    fi
+
+    echo -e "${green}Correct Clang version is cloned and setup at $CLANG_DIR ..${nocol}"
+}
+
+clone_gas(){
+    log_section "Cloning gas Function Start"
+    if ! [ -d "$TOOLCHAIN_DIR/gas/linux-x86" ]; then
+        echo -e "${yellow}⚠️  gas directory not found:${nocol} $TOOLCHAIN_DIR/gas/linux-x86"
+        read -p "Press ENTER to clone to this path, or Ctrl+C to abort and edit the script to configure correct cloning directory: "
+        echo -e "${red}Cloning gas at $TOOLCHAIN_DIR/gas/linux-x86 ...${nocol}"
+        mkdir -p "$TOOLCHAIN_DIR/gas"
+
+        if ! git clone https://android.googlesource.com/platform/prebuilts/gas/linux-x86 \
+            "$TOOLCHAIN_DIR/gas/linux-x86"; then
+            echo -e "${red}Cloning gas failed! Aborting...${nocol}"
+            exit 1
+        fi
+
+        echo -e "${green}gas successfully cloned!${nocol}"
+    else
+        echo -e "${green}gas already present at $TOOLCHAIN_DIR/gas/linux-x86${nocol}"
+    fi
+}
+
+clone_build_tools(){
+    log_section "Cloning build-tools Function Start"
+    # check for the linux-x86 prebuilts inside build-tools
+    if ! [ -d "$TOOLCHAIN_DIR/build-tools/path/linux-x86" ]; then
+        echo -e "${yellow}⚠️  build-tools directory not found:${nocol} $TOOLCHAIN_DIR/build-tools/path/linux-x86"
+        read -p "Press ENTER to clone to this path, or Ctrl+C to abort and edit the script to configure correct cloning directory: "
+        echo -e "${red}Cloning build-tools at $TOOLCHAIN_DIR/build-tools ...${nocol}"
+        mkdir -p "$TOOLCHAIN_DIR/build-tools"
+
+        if ! git clone https://android.googlesource.com/platform/prebuilts/build-tools \
+                       "$TOOLCHAIN_DIR/build-tools"; then
+            echo -e "${red}Cloning build-tools failed! Aborting...${nocol}"
+            exit 1
+        fi
+
+        echo -e "${green}build-tools successfully cloned!${nocol}"
+    else
+        echo -e "${green}build-tools already present at $TOOLCHAIN_DIR/build-tools/path/linux-x86${nocol}"
+    fi
+}
 
 
 # -------------------------------------- Information and miscellaneous Functions ------------------------------------------------------#
@@ -102,7 +305,6 @@ log_section() {
   echo  # Blank line
 
 }
-
 
 start() {
     FINAL_KERNEL_ZIP=""
@@ -167,28 +369,6 @@ error_handler() {
     exit 1
 }
 
-clone() {
-    log_section "Clone Function Start"
-    if ! [ -d "$CLANG_DIR" ]; then
-        echo -e "${yellow}⚠️  Clang directory not found:${nocol} $CLANG_DIR"
-        read -p "Press ENTER to clone to this path, or Ctrl+C to abort and edit the script to configure correct cloning directory: "
-        echo -e "${red}Cloning clang at $CLANG_DIR ...${nocol}"
-        mkdir -p "$CLANG_DIR"
-
-        if ! wget --show-progress -O "$CLANG_DIR/${CLANG_VERSION}.tar.gz" "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/${CLANG_VERSION}.tar.gz"; then
-            echo "${red}Cloning failed! Aborting...${nocol}"
-            exit 1
-        fi
-
-        echo "${yellow}Cloning successful. Extracting the tar file...${nocol}"
-        tar -xzf "$CLANG_DIR/${CLANG_VERSION}.tar.gz" -C "$CLANG_DIR"
-        rm "$CLANG_DIR/${CLANG_VERSION}.tar.gz"
-    fi
-
-    echo -e "${green}Correct Clang version is cloned and setup!${nocol}"
-}
-
-
 clean_kernel() {
     log_section "Clean_Kernel function start"
     cd "$KERNELDIR"
@@ -206,7 +386,7 @@ clean_kernel() {
     # Only remove SUSFS sources if we’re patching SUSFS
     if [ "${PATCH_SUSFS:-0}" -eq 1 ]; then
         echo -e "$yellow**** Removing SUSFS folder/patch ****$nocol"
-        rm -rf susfs4ksu 50_add_susfs_in_gki-5.15*.patch
+        rm -rf susfs4ksu 50_add_susfs_in_gki-android13-5.15.patch
     fi
 
     # Only remove KSU trees if any KSU variant is enabled
@@ -257,9 +437,12 @@ zip_kernel() {
     FINAL_KERNEL_ZIP_WITH_TIMESTAMP="${FINAL_KERNEL_ZIP%.*}_${TIMESTAMP}.zip"
     export FINAL_KERNEL_ZIP_WITH_TIMESTAMP
 
-    echo -e "$yellow**** Copying $ARTIFACT to anykernel 3 folder ****$nocol"
-    cp "$KERNELDIR/out/arch/arm64/boot/$ARTIFACT" "$ANYKERNEL3_DIR/"
-
+    if [[ "$PATCH_KPM" == "1" ]]; then
+        KPM_Patch
+    else
+        echo -e "$yellow**** Copying $ARTIFACT to anykernel 3 folder ****$nocol"
+        cp "$KERNELDIR/out/arch/arm64/boot/$ARTIFACT" "$ANYKERNEL3_DIR/"
+    fi
     echo -e "$green**** Time to zip up! ****$nocol"
     cd $ANYKERNEL3_DIR/
     zip -r9 $FINAL_KERNEL_ZIP_WITH_TIMESTAMP * -x README $FINAL_KERNEL_ZIP_WITH_TIMESTAMP
@@ -299,14 +482,14 @@ build_kernel() {
     cd $KERNELDIR
     # ----------------------Toolchain Info ----------------------------------
     echo -e "$green*** Using this Clang Version to compile kernel *** $nocol"
-    $CC_CLANG --version
+    clang --version
 
     #-----------------------Defconfig stuff-----------------------------------
     echo -e "$yellow**** Kernel defconfig is set to $KERNEL_DEFCONFIG ****$nocol"
     echo -e "$blue***********************************************"
     echo "       NOW MAKING _defconfig : $KERNEL_DEFCONFIG        "
     echo -e "***********************************************$nocol"
-    #make O=out CC="$CC_CLANG" $KERNEL_DEFCONFIG
+    #make O=out CC=clang $KERNEL_DEFCONFIG
     make \
         "${MAKE_FLAGS[@]}" \
         "$KERNEL_DEFCONFIG" \
@@ -367,7 +550,7 @@ build_modules() {
             echo -e "***********************************************$nocol"
 
             echo -e "$green*** Using this Clang Version to compile module*** $nocol"
-            $CC_CLANG --version
+            clang --version
             echo -e "$yellow**** Kernel defconfig is set to $KERNEL_DEFCONFIG ****$nocol"
             echo -e "$blue***********************************************"
             echo "       NOW MAKING _defconfig : $KERNEL_DEFCONFIG        "
@@ -668,10 +851,12 @@ Enable_SUKISU-ultra() {
                 cd "$KERNELDIR" || exit 1
             fi
             echo -e "${green}SUKISU (SUSFS) framework clonning and setup done!.${nocol}"
-            echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
-            ./scripts/config \
-                --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
-                --enable KPM
+            if [[ "$PATCH_KPM" == "1" ]]; then
+                echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
+                ./scripts/config \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                    --enable KPM
+            fi
             if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
                 read -p "Breakpoint after Cloning SUKISU SUSFS Detected! Press Enter to continue..."
             fi
@@ -685,10 +870,12 @@ Enable_SUKISU-ultra() {
                 cd "$KERNELDIR" || exit 1
             fi
             echo -e "${green}SUKISU framework clonning and setup done!.${nocol}"
-            echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
-            ./scripts/config \
-                --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
-                --enable KPM
+            if [[ "$PATCH_KPM" == "1" ]]; then
+                echo -e "${blue}Enabling KPM in defconfig .... …${nocol}"
+                ./scripts/config \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                    --enable KPM
+            fi
             if [[ "$ENABLE_BREAKPOINTS" == "1" ]]; then
                 read -p "Breakpoint after Cloning SUKISU Detected! Press Enter to continue..."
             fi
@@ -722,7 +909,60 @@ Enable_SUKISU-ultra() {
                 exit 1
             fi
         fi
+        if [[ "$SUKI_TRACEPOINTS_HOOK" == "1" ]]; then
+            log_section "Started Applying SUKISU Tracepoint Hook Patches "
+            if ! cp sukisu_tracepoint_hooks.diff sukisu_tracepoint_hooks.patch; then
+                echo -e "${red}Tracepoint hook patch not found in $KERNELDIR ! Aborting.${nocol}"
+                exit 1
+            fi
+            if patch -p1 --fuzz=3 < sukisu_tracepoint_hooks.patch; then
+                echo -e "${green}SUKISU Tracepoint Hook Patch applied successfully.${nocol}"
+                rm -f sukisu_tracepoint_hooks.patch
+                echo -e "${blue}Making necessary defconfig changes .... …${nocol}"
+                ./scripts/config \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                    --enable KSU_TRACEPOINT_HOOK
+                ./scripts/config \
+                    --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                    --disable KSU_DEBUG
+                if [[ "$PATCH_SUSFS" == "1" ]]; then
+                    ./scripts/config \
+                        --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                        --disable KSU_SUSFS_SUS_SU
+                    ./scripts/config \
+                        --file "arch/${ARCH}/configs/${KERNEL_DEFCONFIG}" \
+                        --disable KSU_SUSFS_ENABLE_LOG
+                fi
+            else
+                echo -e "${red}ERROR: SUKISU Tracepoint Hook Patch did not apply cleanly. Aborting.${nocol}"
+                exit 1
+            fi
+        fi
     fi
+}
+
+KPM_Patch() {
+    log_section "Now applying KPM patch"
+    cd $KERNELDIR
+
+    echo -e "$yellow**** Copying generated Image to anykernel 3 folder ****$nocol"
+    cp "$KERNELDIR/out/arch/arm64/boot/Image" "$ANYKERNEL3_DIR/"
+    cd $ANYKERNEL3_DIR/
+
+    echo -e "$yellow**** Cloning KPM patch binary ****$nocol"
+    curl -LS "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
+    chmod +x patch
+    echo -e "$yellow**** Now patching the Kernel Binary ****$nocol"
+    ./patch
+    rm -rf Image patch
+    mv oImage Image
+
+    if [[ "$ARTIFACT" == "Image.gz" ]]; then
+        echo "Compressing Image -> Image.gz"
+        gzip -n -k -f -9 ./Image > ./Image.gz
+        rm -rf Image
+    fi
+    cd $KERNELDIR
 }
 
 Final_CLEANUP() {
@@ -764,8 +1004,8 @@ main() {
     start
     # Clean previous build artifacts
     clean_kernel
-    # Clone necessary repos
-    clone
+    # Setup the enviroment
+    setup_env
     # Apply patches in correct order
     APPLY_PATCHES
     build_kernel
