@@ -1559,6 +1559,28 @@ out:
 
 __setup("slub_debug", setup_slub_debug);
 
+static const char *exclusion_list[] = {
+	"zspage",
+	"zs_handle",
+	"avtab_node",
+	"vm_area_struct",
+	"anon_vma_chain",
+	"anon_vma"
+};
+
+static int is_kmem_cache_excluded(const char *str)
+{
+	int i, excluded = 0;
+
+	for (i = 0; i < (int)ARRAY_SIZE(exclusion_list); i++) {
+		if (!strncmp(str, exclusion_list[i], strlen(exclusion_list[i]))) {
+			excluded = 1;
+			break;
+		}
+	}
+	return excluded;
+}
+
 /*
  * kmem_cache_flags - apply debugging options to the cache
  * @object_size:	the size of an object without meta data
@@ -1613,6 +1635,9 @@ slab_flags_t kmem_cache_flags(unsigned int object_size,
 				flags |= block_flags;
 				return flags;
 			}
+
+			if (name && is_kmem_cache_excluded(name))
+				flags &= ~SLAB_STORE_USER;
 
 			if (!*end || *end == ';')
 				break;
