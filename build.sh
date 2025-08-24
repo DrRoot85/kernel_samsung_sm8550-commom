@@ -94,15 +94,22 @@ KSU_NEXT_MANUAL_HOOKS=1  # Hooks style (1 = manual, 0 = kprobes)
 KSUN_CHECKOUT_HASH=""    # Specific KernelSU-Next commit SHA
 
 ## SUKISU-Ultra Options
-ENABLE_SUKISU=1          # Use SUKISU-Ultra? (1 = yes, 0 = no)
+ENABLE_SUKISU=0          # Use SUKISU-Ultra? (1 = yes, 0 = no)
 SUKI_MANUAL_HOOKS=0      # Manual Hooks for SUKISU (SUSFS version only) (1 = manual, 0 = default)
 SUKI_TRACEPOINTS_HOOK=1  # Use tracepoint hook for Sukisu-Ultra (for SUSFS and Normal ver) (1 = enable, 0 = disabled)
 SUKI_CHECKOUT_HASH=""    # Specific SUKISU commit SHA
 PATCH_KPM=1              # Patches the kernel binary after its done compiling.
+KPM_VERSION="0.12.0"     # Release tag of KPM binary
 
 ## KernelSU Options     | Note KernelSU-Next removed SUSFS support from their branch
 ENABLE_KSU=0             # Use original KernelSU? (1 = yes, 0 = no)
 KSU_CHECKOUT_HASH=""     # Specific KernelSU commit SHA
+
+## Apatch Options
+# Fetch release tags from here: https://github.com/bmax121/KernelPatch/releases
+ENABLE_APATCH=1          # Apply apatch patches? superkey will be asked when patching
+APATCH_VER="0.12.0"  # Release tag of Apatch binary
+KPTOOLS_VER="0.11.3"     # Release tag of kptools binary
 
 # --------------------- Variable verification and corrections -------------------------------------#
 
@@ -160,7 +167,7 @@ if [[ "$ENABLE_KSU_NEXT" == "1" ]]; then
 fi
 
 # If sukisu is not enabled, do not run KPM kernel binary patches
-if [[ "$ENABLE_SUKISU" == "0" ]]; then
+if [[ "$ENABLE_SUKISU" != "1" ]]; then
     PATCH_KPM=0
 fi
 
@@ -169,6 +176,13 @@ if [[ "$SUKI_MANUAL_HOOKS" == "1" && "$SUKI_TRACEPOINTS_HOOK" == "1" ]]; then
     echo -e "${red}Error:${nocol} Only one type of SUKISU Hook variant may be applied! You enabled both SUKISU Manual Hook and Tracepoint Hook."
     exit 1
 fi
+
+# Apatch Verification | Do not apply apatch if KPM patches are selected and sukisu is enabled.
+if [[ "$ENABLE_APATCH" == "1" && "$PATCH_KPM" == "1" && "$ENABLE_SUKISU" == "1" ]]; then
+    echo -e "${red}Error:${nocol} SUKISU is selected: Apatch and KPM patches cannot be applied at the same time!"
+    exit 1
+fi
+
 # SUKISU normal version without susfs does not support manual hooks
 if [[ "$ENABLE_SUKISU" == "1" && "$PATCH_SUSFS" == "0" ]]; then
     if [[ "$SUKI_MANUAL_HOOKS" == "1" ]]; then
@@ -381,6 +395,8 @@ clean_kernel() {
     echo -e "$yellow**** Cleaning 'AnyKernel3' folder / any previous builds ****$nocol"
     rm -f "$ANYKERNEL3_DIR"/*.zip
     rm -rf "$ANYKERNEL3_DIR/$ARTIFACT"
+    rm -rf "$ANYKERNEL3_DIR/Image"
+    rm -rf "$ANYKERNEL3_DIR/Image.gz"
     rm -rf "$ANYKERNEL3_DIR/dtbo.img"
 
     # Only remove SUSFS sources if we’re patching SUSFS
@@ -437,12 +453,16 @@ zip_kernel() {
     FINAL_KERNEL_ZIP_WITH_TIMESTAMP="${FINAL_KERNEL_ZIP%.*}_${TIMESTAMP}.zip"
     export FINAL_KERNEL_ZIP_WITH_TIMESTAMP
 
+    # Apply KPM and apatch patches on generated kernel binary before zipping if selected.
     if [[ "$PATCH_KPM" == "1" ]]; then
         KPM_Patch
+    elif [[ "$ENABLE_APATCH" == "1" ]]; then
+        APATCH
     else
         echo -e "$yellow**** Copying $ARTIFACT to anykernel 3 folder ****$nocol"
         cp "$KERNELDIR/out/arch/arm64/boot/$ARTIFACT" "$ANYKERNEL3_DIR/"
     fi
+
     echo -e "$green**** Time to zip up! ****$nocol"
     cd $ANYKERNEL3_DIR/
     zip -r9 $FINAL_KERNEL_ZIP_WITH_TIMESTAMP * -x README $FINAL_KERNEL_ZIP_WITH_TIMESTAMP
@@ -470,6 +490,13 @@ summary() {
     echo -e "$yellow**** Generated Zip File Location: $KERNELDIR/AnyKernel3/$FINAL_KERNEL_ZIP_WITH_TIMESTAMP ****$nocol"
     echo -e "$blue**** Checksum for kernel zip ****$nocol"
     sha1sum "$KERNELDIR/AnyKernel3/$FINAL_KERNEL_ZIP_WITH_TIMESTAMP"
+
+    if [[ "${ENABLE_APATCH:-0}" == "1" ]]; then
+        echo -e "${green}***********************************************${nocol}"
+        echo -e "${green}*${nocol} Apatch SUPERKEY: ${nocol}${SUPER_KEY}"
+        echo -e "${green}*${nocol} ${yellow}Use: paste this value into the Apatch Manager on-device to gain root access${nocol}"
+        echo -e "${green}***********************************************${nocol}"
+    fi
     if [ "$BUILD_MODULES" == "y" ]; then
         echo -e "$green**** Checksum for Module zip ****$nocol" && sha1sum "$KERNELDIR/Mod/$MOD_NAME" && echo -e "$green**** Generated Module Zip File Location: $KERNELDIR/Mod/$MOD_NAME ****$nocol"
     fi
@@ -950,11 +977,41 @@ KPM_Patch() {
     cd $ANYKERNEL3_DIR/
 
     echo -e "$yellow**** Cloning KPM patch binary ****$nocol"
-    curl -LS "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
-    chmod +x patch
-    echo -e "$yellow**** Now patching the Kernel Binary ****$nocol"
-    ./patch
-    rm -rf Image patch
+    wget --tries=3 "https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/${KPM_VERSION}/patch_linux"
+    chmod +x patch_linux
+    echo -e "$yellow**** Now patching the Kernel Binary with KPM****$nocol"
+    echo  # Blank line
+    ./patch_linux
+    rm -rf Image patch_linux
+    mv oImage Image
+
+    if [[ "$ARTIFACT" == "Image.gz" ]]; then
+        echo "Compressing Image -> Image.gz"
+        gzip -n -k -f -9 ./Image > ./Image.gz
+        rm -rf Image
+    fi
+    cd $KERNELDIR
+}
+
+APATCH() {
+    log_section "Now applying apatch patches"
+    cd $KERNELDIR
+
+    echo -e "$yellow**** Copying generated Image to anykernel 3 folder ****$nocol"
+    cp "$KERNELDIR/out/arch/arm64/boot/Image" "$ANYKERNEL3_DIR/"
+    cd $ANYKERNEL3_DIR/
+
+    echo -e "$yellow**** Cloning apatch and other needed binaries ****$nocol"
+    wget --tries=3 "https://github.com/bmax121/KernelPatch/releases/download/${KPTOOLS_VER}/kptools-linux"
+    wget --tries=3 "https://github.com/bmax121/KernelPatch/releases/download/${APATCH_VER}/kpimg-android"
+    chmod +x kptools-linux
+    echo -e "$yellow**** Now patching the Kernel Binary with APATCH****$nocol"
+    echo  # Blank line
+    read -rp "Enter a strong SUPERKEY for apatch (atleast 8 characters with letters and numbers): " SUPER_KEY
+    echo  # Blank line
+    export SUPER_KEY
+    ./kptools-linux -p --image Image --skey "${SUPER_KEY}" --kpimg kpimg-android --out oImage
+    rm -rf Image kptools-linux kpimg-android
     mv oImage Image
 
     if [[ "$ARTIFACT" == "Image.gz" ]]; then
